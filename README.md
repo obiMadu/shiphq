@@ -1,20 +1,31 @@
 # shiphq
 
-**Local agent orchestration** that converts GitHub issues, Jira tickets, or custom prompts into isolated agent sessions using Git worktrees + tmux.
+**Local agent orchestration** that enables you and your **orchestrator AI agent** to spawn parallel worker agents from GitHub issues, PRs, Jira tickets, or custom prompts—each running in isolated Git worktrees + tmux sessions.
+
+Chat naturally with your orchestrator about what needs to be done. It uses the built-in [orchestrator skill](./skill/SKILL.md) to understand your intent and automatically dispatches specialized agents in parallel. You stay in control while the orchestrator handles the logistics.
+
+Need to jump in? Use tmux session switchers to fuzzy-find and instantly attach to any running agent. Each session is a persistent workspace you can peek into, override, or collaborate with anytime.
 
 > **Note:** Currently supports **local workflow only** (WorkTrunk + tmux + opencode). Cloud sandbox support (Daytona, etc.) is planned for future releases.
 
 ## How It Works
 
-**The core idea:** An issue/ticket becomes the task specification for an AI agent.
+**The core idea:** Chat with your orchestrator agent about what needs to be done, and it spawns parallel worker agents for each task.
 
 ```
-GitHub Issue #456        →  shiphq create --github 456
-├─ Title: "Fix login"    →  Agent prompt: "Implement: Fix login"
-├─ Body: Description     →  Context for the agent
-└─ Comments              →  Additional requirements
+You (in orchestrator session)
+│
+├─ "Fix login bug #456"     →  Orchestrator uses shiphq skill
+│                               └─ shiphq create --github 456 -t issue
+│                                  ├─ Creates: github-issue-456 worktree
+│                                  ├─ Starts: tmux session blog-github-issue-456
+│                                  └─ Spawns: opencode agent with issue context
+│
+└─ "Review PR #234"         →  Orchestrator spawns another agent
+                                  └─ shiphq create --github 234 -t pr
+                                     └─ Parallel agent session
 
-Result: Isolated worktree + tmux session + running agent
+Result: Multiple isolated worktrees + tmux sessions + running agents
 ```
 
 ## Workflow
@@ -29,18 +40,23 @@ Result: Isolated worktree + tmux session + running agent
 2. **Start orchestrator** (already in the default branch worktree)
    ```bash
    tmux new -s project-dev
-   opencode  # Chat here, spawn parallel agents
+   opencode  # Load the shiphq skill and chat with your orchestrator
    ```
 
-3. **Spawn agents** from issues
-   ```bash
-   shiphq create --github 456 -t issue    # Creates new worktree + tmux + agent
-   shiphq create --github 456 -t pr       # For PR reviews
-   shiphq create --jira PROJ-123          # Jira tickets
-   shiphq create --prompt "Refactor auth"   # Custom tasks
+3. **Discuss and dispatch** with your orchestrator
+   
+   Simply chat naturally about what needs to be done:
    ```
+   You: "Fix the login bug (#456) and review PR #234"
+   
+   Orchestrator: Uses shiphq skill to spawn agents automatically
+   → shiphq create --github 456 -t issue
+   → shiphq create --github 234 -t pr
+   ```
+   
+   The orchestrator understands your intent and runs the right commands.
 
-4. **Switch sessions** 
+4. **Switch sessions** - Jump into any agent's workspace 
    
    **Recommended:** Use [tmux-sessionx](https://github.com/omerxx/tmux-sessionx) to fuzzy-find and switch:
    ```bash
