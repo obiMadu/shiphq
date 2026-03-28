@@ -3,9 +3,9 @@ package agent
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/obiMadu/shiphq/internal/config"
 )
 
 // Agent represents an AI coding agent that can be spawned in sessions
@@ -107,10 +107,7 @@ func List() []string {
 
 // loadUserConfig loads user-defined agent configurations
 func loadUserConfig() (*Config, error) {
-	configPath, err := getConfigPath()
-	if err != nil {
-		return nil, err
-	}
+	configPath := config.GetConfigPath()
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return &Config{}, nil
@@ -122,15 +119,4 @@ func loadUserConfig() (*Config, error) {
 	}
 
 	return &cfg, nil
-}
-
-// getConfigPath returns the path to the agent config file
-func getConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	configDir := filepath.Join(home, ".config", "shiphq")
-	return filepath.Join(configDir, "config.toml"), nil
 }
