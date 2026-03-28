@@ -10,7 +10,6 @@ import (
 
 // Agent represents an AI coding agent that can be spawned in sessions
 type Agent struct {
-	Name       string `toml:"name"`
 	Command    string `toml:"command"`     // Base command (e.g., "opencode", "claude", "aider")
 	PromptFlag string `toml:"prompt_flag"` // How to pass prompt: "--prompt", "--message", "" (for positional)
 }
@@ -37,17 +36,14 @@ func (a Agent) Validate() error {
 // Built-in agents registry - easy for maintainers to add new ones here
 var builtinAgents = map[string]Agent{
 	"opencode": {
-		Name:       "opencode",
 		Command:    "opencode",
 		PromptFlag: "--prompt",
 	},
 	"claude": {
-		Name:       "claude",
 		Command:    "claude",
 		PromptFlag: "", // Positional: claude "..."
 	},
 	"codex": {
-		Name:       "codex",
 		Command:    "codex",
 		PromptFlag: "", // Positional: codex "..."
 	},
@@ -70,10 +66,6 @@ func Get(name string) (Agent, error) {
 	cfg, err := loadUserConfig()
 	if err == nil && cfg.Agents != nil {
 		if agent, ok := cfg.Agents[name]; ok {
-			// Ensure name is set
-			if agent.Name == "" {
-				agent.Name = name
-			}
 			if err := agent.Validate(); err != nil {
 				return Agent{}, fmt.Errorf("invalid agent config for '%s': %w", name, err)
 			}

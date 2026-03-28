@@ -21,6 +21,8 @@ description: |
 
 shiphq is a CLI tool that converts GitHub issues, Jira tickets, or custom prompts into isolated AI agent sessions. It enables an **orchestrator pattern** where you (the agent in the main tmux session) dispatch work to parallel agents running in their own isolated environments.
 
+**Default agent:** opencode. Other agents (claude, codex, custom) available if user specifically requests them via `--agent` flag.
+
 **The workflow:**
 1. You are the **orchestrator agent** running in the main tmux session (e.g., `project-dev`)
 2. You spawn **worker agents** using `shiphq create` - each gets their own isolated workspace
@@ -32,7 +34,7 @@ shiphq is a CLI tool that converts GitHub issues, Jira tickets, or custom prompt
 Each worker session gets:
 - **Git worktree** - Isolated branch/workspace via WorkTrunk
 - **tmux session** - Persistent terminal environment (named `{project}-{branch}`)
-- **Running agent** - opencode with the issue/ticket as its task specification
+- **Running agent** - AI agent (default: opencode) with the issue/ticket as its task specification
 
 **Key insight:** The issue/ticket becomes the worker agent's prompt. Title + description = task specification. You spawn workers, they do the work, the human can jump in anytime.
 
@@ -61,8 +63,13 @@ Before using shiphq, ensure these are installed and configured:
 2. **tmux** - Terminal multiplexer
    - Install: `brew install tmux` or `apt install tmux`
 
-3. **opencode** - AI coding agent
-   - Install: Follow instructions at opencode.ai
+3. **AI Agent** - One of:
+   - **opencode** (default) - Install from opencode.ai
+   - **claude** (Claude Code) - `brew install claude-code`  
+   - **codex** (OpenAI Codex) - see OpenAI docs
+   - **Custom agents** - can be configured by user
+   
+   **YOU (the orchestrator) always default to opencode. Only use other agents if the user specifically requests them.**
 
 4. **GitHub CLI** (`gh`) - For fetching GitHub issues
    - Install: `brew install gh && gh auth login`
@@ -95,6 +102,7 @@ Chat here, plan work, then dispatch to parallel agents.
 
 From the orchestrator (or any terminal in the bare repo):
 
+**Default (use opencode):**
 ```bash
 # From GitHub issue (requires --type)
 shiphq create --github 456 -t issue
@@ -109,6 +117,17 @@ shiphq create --jira PROJ-123
 shiphq create --prompt "Refactor authentication middleware"
 ```
 
+**Only if user specifically requests a different agent (you default to opencode):**
+```bash
+# User asks for Claude Code
+shiphq create --github 456 -t issue --agent claude
+
+# User asks for Codex CLI
+shiphq create --github 456 -t pr --agent codex
+```
+
+**Important:** Do NOT suggest or recommend other agents. Do NOT install agents. Only use `--agent` flag if the user explicitly says "use claude" or "use codex". Default is always opencode.
+
 **Custom prompts for any source:**
 You can pass a custom prompt to override the default agent instructions:
 ```bash
@@ -120,6 +139,25 @@ shiphq create --github 456 -t issue --prompt "Write tests for this issue first"
 
 # Jira with custom prompt
 shiphq create --jira PROJ-123 --prompt "Focus on database migration"
+
+# Combine custom agent + custom prompt (only if user requests specific agent)
+shiphq create --github 456 -t issue --agent claude --prompt "Focus on type safety"
+```
+
+**Custom prompts for any source:**
+You can pass a custom prompt to override the default agent instructions:
+```bash
+# Override PR review prompt
+shiphq create --github 456 -t pr --prompt "Focus on security issues in this PR"
+
+# Override issue implementation
+shiphq create --github 456 -t issue --prompt "Write tests for this issue first"
+
+# Jira with custom prompt
+shiphq create --jira PROJ-123 --prompt "Focus on database migration"
+
+# Combine custom agent + custom prompt
+shiphq create --github 456 -t issue --agent claude --prompt "Focus on type safety"
 ```
 
 **What happens:**
@@ -127,7 +165,8 @@ shiphq create --jira PROJ-123 --prompt "Focus on database migration"
 2. Creates branch: `github-issue-456` or `github-pr-456` (uses issue/PR number only)
 3. Creates worktree via `wt switch --create`
 4. Starts tmux session: `blog-github-issue-456` (format: {project}-{source}-{type}-{id})
-5. Spawns opencode with prompt: "Implement GitHub issue #456..." or custom prompt
+5. Spawns opencode (default) with prompt: "Implement GitHub issue #456..." or custom prompt
+6. If user requested different agent via `--agent`, spawns that agent instead
 
 **CRITICAL - AGENT MUST NOT ATTACH:** After running `shiphq create`, you (the agent) must NOT attempt to attach to the new session. Do NOT run `shiphq attach` or any tmux attach command. The new session runs in the background in tmux for the human user to interact with. Your job is to spawn it and move on. Simply acknowledge to the user that the session was created.
 
@@ -165,7 +204,8 @@ This removes:
 
 | Command | Usage | Description |
 |---------|-------|-------------|
-| `create` | `shiphq create --github 456 -t issue` | Spawn agent from GitHub issue (requires -t) |
+| `create` | `shiphq create --github 456 -t issue` | Spawn opencode agent from GitHub issue (requires -t) |
+| `create` | `shiphq create --github 456 -t issue --agent claude` | Spawn with specific agent (only if user requests) |
 | `create` | `shiphq create --github 456 -t pr` | Spawn agent from GitHub PR (requires -t) |
 | `create` | `shiphq create --jira PROJ-123` | Spawn agent from Jira ticket |
 | `create` | `shiphq create --prompt "text"` | Spawn agent from custom prompt |
@@ -173,6 +213,8 @@ This removes:
 | `list` | `shiphq list` | Show all active sessions for current project |
 | `attach` | `shiphq attach <id>` | Attach to tmux session |
 | `cleanup` | `shiphq cleanup --id <id>` | Remove worktree + tmux session |
+
+**Note on agents:** Always default to opencode. Only use `--agent` flag if user specifically requests claude, codex, or another agent. Available agents: opencode (default), claude (Claude Code), codex (OpenAI Codex), or custom agents configured in `~/.config/shiphq/config.toml`.
 
 ## Naming Convention
 
@@ -257,14 +299,25 @@ shiphq create --prompt "Create API endpoint for user authentication"
 ### Pattern 5: PR Reviews
 
 ```bash
-# Spawn PR review agent
+# Spawn PR review agent (default: opencode)
 shiphq create --github 456 -t pr
 
 # Agent will review the PR and provide feedback
 # You can attach later to see the review results
 ```
 
-### Pattern 6: Custom Prompts for Specific Tasks
+### Pattern 6: Background Research
+
+```bash
+# Spawn long-running research task (default: opencode)
+shiphq create --prompt "Analyze codebase and propose architecture improvements"
+
+# Continue working on other things
+# Jump back in later to see results
+shiphq attach blog-prompt-analyze-codebase-and-propose
+```
+
+### Pattern 7: Custom Prompts for Specific Tasks
 
 ```bash
 # Issue with custom focus
@@ -275,6 +328,9 @@ shiphq create --github 456 -t pr --prompt "Security review: check for vulnerabil
 
 # Jira with specific implementation notes
 shiphq create --jira PROJ-789 --prompt "Implement with Redis caching"
+
+# If user requests specific agent + custom prompt
+shiphq create --github 456 -t issue --agent claude --prompt "Focus on type safety"
 ```
 
 ## Best Practices
@@ -377,8 +433,18 @@ shiphq cleanup --id myapp-github-42
 
 shiphq transforms GitHub issues and tasks into isolated, persistent agent workspaces. The orchestrator pattern lets one agent plan while many agents execute in parallel, all manageable through tmux.
 
+**Key Features:**
+- Multiple AI agents supported (opencode, claude, codex, custom)
+- Issue → Agent prompt (auto-generated or custom)
+- `shiphq create` → Worktree + tmux + agent
+- `shiphq create --agent <name>` → Choose specific agent
+- `tmux-sessionx` → Switch between parallel work
+- `shiphq cleanup` → Clean removal when done
+
 **Remember:**
 - Issue → Agent prompt
 - `shiphq create` → Worktree + tmux + agent
+- `--agent` flag to choose AI agent
+- `--prompt` flag to customize task instructions
 - `tmux-sessionx` → Switch between parallel work
 - `shiphq cleanup` → Clean removal when done

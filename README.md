@@ -137,21 +137,26 @@ You can add support for any AI agent by creating `~/.config/shiphq/config.toml`:
 
 ```toml
 [agents.aider]
-name = "aider"
 command = "aider"
-prompt_flag = "--message"
+prompt_flag = "--message"  # How this agent receives prompts
 
 [agents.custom-agent]
-name = "custom-agent"
 command = "my-agent"
-prompt_flag = ""  # Empty = positional argument
+prompt_flag = ""  # Empty = positional argument (agent "prompt")
 ```
 
 Then use it: `shiphq create --github 456 -t issue --agent aider`
 
+**Why `prompt_flag` matters:** shiphq generates prompts based on issue/PR content (e.g., "Implement GitHub issue #456: Fix login"). The `prompt_flag` tells shiphq how to pass that prompt to your agent:
+- `--prompt` → `opencode --prompt "generated prompt"`
+- `--message` → `aider --message "generated prompt"`
+- `""` (empty) → `claude "generated prompt"` (positional)
+
+This works for both built-in prompts (from issues/PRs) and custom prompts via `--prompt "custom instructions"`.
+
 **For maintainers:** Adding new built-in agents is easy—just add two fields:
 - `command`: The CLI command to run
-- `prompt_flag`: How to pass the prompt (`--prompt`, `--message`, or `\"\"` for positional)
+- `prompt_flag`: How to pass the prompt (`--prompt`, `--message`, or `""` for positional)
 
 See `internal/agent/agent.go` for the built-in registry.
 
