@@ -14,14 +14,14 @@ type Agent struct {
 	PromptFlag string `toml:"prompt_flag"` // How to pass prompt: "--prompt", "--message", "" (for positional)
 }
 
-// BuildCommand builds the full command string with the prompt
-func (a Agent) BuildCommand(prompt string) string {
+// BuildArgs builds the command and arguments used to start the agent.
+func (a Agent) BuildArgs(prompt string) []string {
 	if a.PromptFlag == "" {
 		// Positional argument (e.g., claude "...", codex "...")
-		return fmt.Sprintf("%s %q", a.Command, prompt)
+		return []string{a.Command, prompt}
 	}
 	// Flag-based (e.g., opencode --prompt "...", aider --message "...")
-	return fmt.Sprintf("%s %s %q", a.Command, a.PromptFlag, prompt)
+	return []string{a.Command, a.PromptFlag, prompt}
 }
 
 // Validate checks if the agent configuration is valid

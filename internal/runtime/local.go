@@ -47,8 +47,9 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 		return Session{}, withCreateRollback(fmt.Errorf("tmux create failed: %w\n%s", err, output), sessionID, branch)
 	}
 
-	agentCommand := configuredAgent.BuildCommand(workerPrompt)
-	workerWindowCommand := exec.Command("tmux", "new-window", "-t", sessionID, "-n", "agent", "-c", worktreePath, agentCommand)
+	agentArgs := configuredAgent.BuildArgs(workerPrompt)
+	workerWindowArgs := append([]string{"new-window", "-t", sessionID, "-n", "agent", "-c", worktreePath}, agentArgs...)
+	workerWindowCommand := exec.Command("tmux", workerWindowArgs...)
 	if output, err := workerWindowCommand.CombinedOutput(); err != nil {
 		return Session{}, withCreateRollback(fmt.Errorf("tmux window failed: %w\n%s", err, output), sessionID, branch)
 	}
@@ -107,17 +108,18 @@ func (localRuntime LocalRuntime) Cleanup(sessionID string) error {
 
 	var cleanupErrors []string
 
-	sessionKillCommand := exec.Command("tmux", "kill-session", "-t", sessionID)
-	if output, err := sessionKillCommand.CombinedOutput(); err != nil {
-		cleanupErrors = append(cleanupErrors, fmt.Sprintf("tmux kill failed: %v\n%s", err, output))
+	if err := cleanupTmuxSession(sessionID); err != nil {
+		cleanupErrors = append(cleanupErrors, err.Error())
 	}
 
-	worktreeRemoveCommand := exec.Command("wt", "remove", metadata.Branch)
-	if output, err := worktreeRemoveCommand.CombinedOutput(); err != nil {
-		cleanupErrors = append(cleanupErrors, fmt.Sprintf("wt remove failed: %v\n%s", err, output))
+	worktreeTarget := metadata.WorktreePath
+	if worktreeTarget == "" {
+		worktreeTarget = metadata.Branch
 	}
 
-	if err := session.Delete(sessionID); err != nil {
+	if strings.TrimSpace(worktreeTarget) == "" {
+		cleanupErrors = append(cleanupErrors, "session metadata is missing both worktree path and branch")
+	} else if err := cleanupWorktree(worktreeTarget); err != nil {
 		cleanupErrors = append(cleanupErrors, err.Error())
 	}
 
@@ -125,7 +127,40 @@ func (localRuntime LocalRuntime) Cleanup(sessionID string) error {
 		return errors.New(strings.Join(cleanupErrors, "\n"))
 	}
 
+	if err := session.Delete(sessionID); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func cleanupTmuxSession(sessionID string) error {
+	sessionKillCommand := exec.Command("tmux", "kill-session", "-t", sessionID)
+	output, err := sessionKillCommand.CombinedOutput()
+	if err == nil || isMissingTmuxSession(output) {
+		return nil
+	}
+
+	return fmt.Errorf("tmux kill failed: %v\n%s", err, output)
+}
+
+func cleanupWorktree(worktreeTarget string) error {
+	worktreeRemoveCommand := exec.Command("wt", "remove", worktreeTarget)
+	output, err := worktreeRemoveCommand.CombinedOutput()
+	if err == nil || isMissingWorktree(output) {
+		return nil
+	}
+
+	return fmt.Errorf("wt remove failed: %v\n%s", err, output)
+}
+
+func isMissingTmuxSession(output []byte) bool {
+	return strings.Contains(strings.ToLower(string(output)), "can't find session")
+}
+
+func isMissingWorktree(output []byte) bool {
+	lowerOutput := strings.ToLower(string(output))
+	return strings.Contains(lowerOutput, "no branch named") || strings.Contains(lowerOutput, "no worktree")
 }
 
 func generateBranchName(workItem workitem.WorkItem) (string, error) {
@@ -176,9 +211,8 @@ func withCreateRollback(createErr error, sessionID, branch string) error {
 	var rollbackErrors []string
 
 	if sessionID != "" {
-		sessionKillCommand := exec.Command("tmux", "kill-session", "-t", sessionID)
-		if output, err := sessionKillCommand.CombinedOutput(); err != nil {
-			rollbackErrors = append(rollbackErrors, fmt.Sprintf("tmux rollback failed: %v\n%s", err, output))
+		if err := cleanupTmuxSession(sessionID); err != nil {
+			rollbackErrors = append(rollbackErrors, err.Error())
 		}
 
 		if err := session.Delete(sessionID); err != nil {
@@ -187,9 +221,8 @@ func withCreateRollback(createErr error, sessionID, branch string) error {
 	}
 
 	if branch != "" {
-		worktreeRemoveCommand := exec.Command("wt", "remove", branch)
-		if output, err := worktreeRemoveCommand.CombinedOutput(); err != nil {
-			rollbackErrors = append(rollbackErrors, fmt.Sprintf("wt rollback failed: %v\n%s", err, output))
+		if err := cleanupWorktree(branch); err != nil {
+			rollbackErrors = append(rollbackErrors, err.Error())
 		}
 	}
 
