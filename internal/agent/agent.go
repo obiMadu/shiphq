@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/obiMadu/shiphq/internal/config"
@@ -14,14 +15,22 @@ type Agent struct {
 	PromptFlag string `toml:"prompt_flag"` // How to pass prompt: "--prompt", "--message", "" (for positional)
 }
 
-// BuildArgs builds the command and arguments used to start the agent.
-func (a Agent) BuildArgs(prompt string) []string {
-	if a.PromptFlag == "" {
-		// Positional argument (e.g., claude "...", codex "...")
-		return []string{a.Command, prompt}
+// BuildCommand builds a shell-safe command string for tmux.
+func (a Agent) BuildCommand(prompt string) string {
+	parts := []string{shellQuote(a.Command)}
+	if a.PromptFlag != "" {
+		parts = append(parts, shellQuote(a.PromptFlag))
 	}
-	// Flag-based (e.g., opencode --prompt "...", aider --message "...")
-	return []string{a.Command, a.PromptFlag, prompt}
+	parts = append(parts, shellQuote(prompt))
+	return strings.Join(parts, " ")
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 // Validate checks if the agent configuration is valid

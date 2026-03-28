@@ -25,6 +25,7 @@ var (
 	typeFlag    string
 	idFlag      string
 	agentFlag   string
+	forceFlag   bool
 )
 
 var rootCmd = &cobra.Command{

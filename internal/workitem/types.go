@@ -20,12 +20,13 @@ func (sourceRef SourceRef) RegistryKey() string {
 }
 
 type WorkItem struct {
-	Mode        WorkMode
-	Source      SourceRef
-	Identifier  string
-	Title       string
-	Description string
-	URL         string
+	Mode         WorkMode
+	Source       SourceRef
+	Identifier   string
+	TargetBranch string
+	Title        string
+	Description  string
+	URL          string
 }
 
 func (workItem WorkItem) Context() string {

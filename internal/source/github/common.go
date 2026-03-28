@@ -10,9 +10,10 @@ import (
 )
 
 type viewPayload struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	URL   string `json:"url"`
+	Title       string `json:"title"`
+	Body        string `json:"body"`
+	URL         string `json:"url"`
+	HeadRefName string `json:"headRefName"`
 }
 
 func fetchWithGitHubCLI(commandName string, sourceRef workitem.SourceRef, workMode workitem.WorkMode) (workitem.WorkItem, error) {
@@ -20,7 +21,12 @@ func fetchWithGitHubCLI(commandName string, sourceRef workitem.SourceRef, workMo
 		return workitem.WorkItem{}, fmt.Errorf("GitHub %s reference cannot be empty", sourceRef.Kind)
 	}
 
-	command := exec.Command("gh", commandName, "view", sourceRef.Reference, "--json", "title,body,url")
+	fields := []string{"title", "body", "url"}
+	if commandName == "pr" {
+		fields = append(fields, "headRefName")
+	}
+
+	command := exec.Command("gh", commandName, "view", sourceRef.Reference, "--json", strings.Join(fields, ","))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return workitem.WorkItem{}, fmt.Errorf("failed to fetch GitHub %s %s: %w\n%s", sourceRef.Kind, sourceRef.Reference, err, output)
@@ -37,11 +43,12 @@ func fetchWithGitHubCLI(commandName string, sourceRef workitem.SourceRef, workMo
 	}
 
 	return workitem.WorkItem{
-		Mode:        workMode,
-		Source:      sourceRef,
-		Identifier:  identifier,
-		Title:       strings.TrimSpace(payload.Title),
-		Description: strings.TrimSpace(payload.Body),
-		URL:         strings.TrimSpace(payload.URL),
+		Mode:         workMode,
+		Source:       sourceRef,
+		Identifier:   identifier,
+		TargetBranch: strings.TrimSpace(payload.HeadRefName),
+		Title:        strings.TrimSpace(payload.Title),
+		Description:  strings.TrimSpace(payload.Body),
+		URL:          strings.TrimSpace(payload.URL),
 	}, nil
 }

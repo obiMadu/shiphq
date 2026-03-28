@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/obiMadu/shiphq/internal/agent"
@@ -19,50 +20,66 @@ type Session struct {
 
 type LocalRuntime struct{}
 
+const workerPromptFileName = "prompt.md"
+
 func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string) (Session, error) {
-	branch, err := generateBranchName(workItem)
+	sessionLabel, err := generateBranchName(workItem)
 	if err != nil {
 		return Session{}, err
 	}
 
-	sessionID := fmt.Sprintf("%s-%s", project, branch)
+	sessionID := fmt.Sprintf("%s-%s", project, sessionLabel)
 
 	configuredAgent, err := agent.Get(agentName)
 	if err != nil {
 		return Session{}, err
 	}
 
-	worktreeCreateCommand := exec.Command("wt", "switch", "--create", branch)
-	if output, err := worktreeCreateCommand.CombinedOutput(); err != nil {
+	worktreeSwitchTarget, worktreeLookupBranch, shouldCreateWorktree, err := resolveWorktreeSwitch(workItem, sessionLabel)
+	if err != nil {
+		return Session{}, err
+	}
+
+	worktreeSwitchCommand := buildWorktreeSwitchCommand(worktreeSwitchTarget, shouldCreateWorktree)
+	if output, err := worktreeSwitchCommand.CombinedOutput(); err != nil {
 		return Session{}, fmt.Errorf("wt switch failed: %w\n%s", err, output)
 	}
 
-	worktreePath, err := findWorktreePath(branch)
+	worktreePath, err := findWorktreePath(worktreeLookupBranch)
 	if err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to resolve worktree path: %w", err), sessionID, branch)
+		return Session{}, withCreateRollback(fmt.Errorf("failed to resolve worktree path: %w", err), sessionID, worktreeLookupBranch)
 	}
 
-	sessionCreateCommand := exec.Command("tmux", "new-session", "-d", "-s", sessionID, "-c", worktreePath)
+	actualBranch, err := currentWorktreeBranch(worktreePath)
+	if err != nil {
+		return Session{}, withCreateRollback(fmt.Errorf("failed to resolve worktree branch: %w", err), sessionID, worktreePath)
+	}
+
+	if err := ignoreWorktreeFile(worktreePath, workerPromptFileName); err != nil {
+		return Session{}, withCreateRollback(fmt.Errorf("failed to ignore worker prompt file: %w", err), sessionID, worktreePath)
+	}
+
+	if err := writeWorkerPromptFile(worktreePath, workerPrompt); err != nil {
+		return Session{}, withCreateRollback(fmt.Errorf("failed to write worker prompt file: %w", err), sessionID, worktreePath)
+	}
+
+	bootstrapPrompt := buildBootstrapPrompt(workerPromptFileName)
+	agentCommand := configuredAgent.BuildCommand(bootstrapPrompt)
+
+	sessionCreateCommand := exec.Command("tmux", "new-session", "-d", "-s", sessionID, "-n", "agent", "-c", worktreePath, agentCommand)
 	if output, err := sessionCreateCommand.CombinedOutput(); err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("tmux create failed: %w\n%s", err, output), sessionID, branch)
-	}
-
-	agentArgs := configuredAgent.BuildArgs(workerPrompt)
-	workerWindowArgs := append([]string{"new-window", "-t", sessionID, "-n", "agent", "-c", worktreePath}, agentArgs...)
-	workerWindowCommand := exec.Command("tmux", workerWindowArgs...)
-	if output, err := workerWindowCommand.CombinedOutput(); err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("tmux window failed: %w\n%s", err, output), sessionID, branch)
+		return Session{}, withCreateRollback(fmt.Errorf("tmux create failed: %w\n%s", err, output), sessionID, worktreePath)
 	}
 
 	metadata := session.Metadata{
 		SessionID:    sessionID,
 		Project:      project,
-		Branch:       branch,
+		Branch:       actualBranch,
 		WorktreePath: worktreePath,
 		WorkItem:     workItem,
 	}
 	if err := session.Save(metadata); err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to save session metadata: %w", err), sessionID, branch)
+		return Session{}, withCreateRollback(fmt.Errorf("failed to save session metadata: %w", err), sessionID, worktreePath)
 	}
 
 	return Session{
@@ -90,6 +107,123 @@ func (localRuntime LocalRuntime) List(project string) ([]Session, error) {
 	}
 
 	return sessions, nil
+}
+
+func writeWorkerPromptFile(worktreePath, prompt string) error {
+	promptPath := filepath.Join(worktreePath, workerPromptFileName)
+	promptContents := prompt
+	if !strings.HasSuffix(promptContents, "\n") {
+		promptContents += "\n"
+	}
+
+	if err := os.WriteFile(promptPath, []byte(promptContents), 0644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", promptPath, err)
+	}
+
+	return nil
+}
+
+func ignoreWorktreeFile(worktreePath, fileName string) error {
+	gitDir, err := findGitDir(worktreePath)
+	if err != nil {
+		return err
+	}
+
+	excludePath := filepath.Join(gitDir, "info", "exclude")
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0755); err != nil {
+		return fmt.Errorf("failed to prepare exclude file directory: %w", err)
+	}
+
+	pattern := "/" + fileName
+	existingContents, err := os.ReadFile(excludePath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read %s: %w", excludePath, err)
+	}
+
+	for _, line := range strings.Split(string(existingContents), "\n") {
+		if strings.TrimSpace(line) == pattern {
+			return nil
+		}
+	}
+
+	updatedContents := string(existingContents)
+	if updatedContents != "" && !strings.HasSuffix(updatedContents, "\n") {
+		updatedContents += "\n"
+	}
+	updatedContents += pattern + "\n"
+
+	if err := os.WriteFile(excludePath, []byte(updatedContents), 0644); err != nil {
+		return fmt.Errorf("failed to update %s: %w", excludePath, err)
+	}
+
+	return nil
+}
+
+func findGitDir(worktreePath string) (string, error) {
+	gitDirCommand := exec.Command("git", "rev-parse", "--git-dir")
+	gitDirCommand.Dir = worktreePath
+	output, err := gitDirCommand.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse --git-dir failed: %w\n%s", err, output)
+	}
+
+	gitDir := strings.TrimSpace(string(output))
+	if gitDir == "" {
+		return "", fmt.Errorf("git directory cannot be empty")
+	}
+
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(worktreePath, gitDir)
+	}
+
+	return filepath.Clean(gitDir), nil
+}
+
+func buildBootstrapPrompt(fileName string) string {
+	return fmt.Sprintf("Read ./%s and use it as the full task brief.", fileName)
+}
+
+func resolveWorktreeSwitch(workItem workitem.WorkItem, defaultBranch string) (string, string, bool, error) {
+	if workItem.Source.System == "github" && workItem.Source.Kind == "pr" {
+		prReference := strings.TrimSpace(workItem.Source.Reference)
+		if prReference == "" {
+			return "", "", false, fmt.Errorf("GitHub PR reference cannot be empty")
+		}
+
+		targetBranch := strings.TrimSpace(workItem.TargetBranch)
+		if targetBranch == "" {
+			return "", "", false, fmt.Errorf("GitHub PR %s is missing a head branch", prReference)
+		}
+
+		return "pr:" + prReference, targetBranch, false, nil
+	}
+
+	return defaultBranch, defaultBranch, true, nil
+}
+
+func buildWorktreeSwitchCommand(target string, shouldCreate bool) *exec.Cmd {
+	args := []string{"switch"}
+	if shouldCreate {
+		args = append(args, "--create")
+	}
+	args = append(args, target)
+	return exec.Command("wt", args...)
+}
+
+func currentWorktreeBranch(worktreePath string) (string, error) {
+	branchCommand := exec.Command("git", "branch", "--show-current")
+	branchCommand.Dir = worktreePath
+	output, err := branchCommand.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git branch --show-current failed: %w\n%s", err, output)
+	}
+
+	branch := strings.TrimSpace(string(output))
+	if branch == "" {
+		return "", fmt.Errorf("current branch cannot be empty")
+	}
+
+	return branch, nil
 }
 
 func (localRuntime LocalRuntime) Attach(sessionID string) error {
