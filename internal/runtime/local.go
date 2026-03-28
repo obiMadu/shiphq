@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/obiMadu/shiphq/internal/adapters"
+	"github.com/obiMadu/shiphq/internal/agent"
 )
 
 type Session struct {
@@ -17,7 +18,7 @@ type Session struct {
 }
 
 type Runtime interface {
-	Create(project string, task adapters.Task) (Session, error)
+	Create(project string, task adapters.Task, agentName string) (Session, error)
 	List(project string) ([]Session, error)
 	Attach(sessionID string) error
 	Cleanup(sessionID string) error
@@ -37,7 +38,7 @@ func Get(name string) (Runtime, error) {
 
 type LocalRuntime struct{}
 
-func (l *LocalRuntime) Create(project string, task adapters.Task) (Session, error) {
+func (l *LocalRuntime) Create(project string, task adapters.Task, agentName string) (Session, error) {
 	branch := generateBranchName(task)
 	sessionID := fmt.Sprintf("%s-%s", project, branch)
 
@@ -51,8 +52,14 @@ func (l *LocalRuntime) Create(project string, task adapters.Task) (Session, erro
 		return Session{}, fmt.Errorf("tmux create failed: %w\n%s", err, out)
 	}
 
-	opencodeCmd := fmt.Sprintf("opencode --prompt %q", task.Prompt)
-	windowCmd := exec.Command("tmux", "new-window", "-t", sessionID, "-n", "agent", opencodeCmd)
+	// Get the agent and build the command
+	ag, err := agent.Get(agentName)
+	if err != nil {
+		return Session{}, err
+	}
+
+	agentCmd := ag.BuildCommand(task.Prompt)
+	windowCmd := exec.Command("tmux", "new-window", "-t", sessionID, "-n", "agent", agentCmd)
 	if out, err := windowCmd.CombinedOutput(); err != nil {
 		return Session{}, fmt.Errorf("tmux window failed: %w\n%s", err, out)
 	}

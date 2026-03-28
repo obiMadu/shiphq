@@ -18,6 +18,7 @@ var (
 	projectFlag string
 	typeFlag    string
 	idFlag      string
+	agentFlag   string
 )
 
 var rootCmd = &cobra.Command{
@@ -62,6 +63,7 @@ func init() {
 	createCmd.Flags().StringVar(&runtimeFlag, "runtime", "local", "Runtime backend (local, daytona)")
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
+	createCmd.Flags().StringVar(&agentFlag, "agent", "opencode", "AI agent to spawn (opencode, claude, codex, or custom)")
 
 	cleanupCmd.Flags().StringVar(&idFlag, "id", "", "Session ID to cleanup")
 	cleanupCmd.MarkFlagRequired("id")
@@ -109,7 +111,7 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	session, err := rt.Create(project, task)
+	session, err := rt.Create(project, task, agentFlag)
 	if err != nil {
 		return err
 	}
