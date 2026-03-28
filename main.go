@@ -3,10 +3,17 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
-	"github.com/obiMadu/shiphq/internal/adapters"
+	createinput "github.com/obiMadu/shiphq/internal/cli"
+	promptbuilder "github.com/obiMadu/shiphq/internal/prompt"
+	"github.com/obiMadu/shiphq/internal/repository"
 	"github.com/obiMadu/shiphq/internal/runtime"
+	"github.com/obiMadu/shiphq/internal/source"
+	_ "github.com/obiMadu/shiphq/internal/source/providers"
+	"github.com/obiMadu/shiphq/internal/workitem"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +21,6 @@ var (
 	githubFlag  int
 	jiraFlag    string
 	promptFlag  string
-	runtimeFlag string
 	projectFlag string
 	typeFlag    string
 	idFlag      string
@@ -23,15 +29,14 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "shiphq",
-	Short: "Agent workflow orchestrator for Git worktrees and cloud sandboxes",
-	Long: `shiphq creates isolated worktrees and agent sessions from GitHub issues, 
-Jira tickets, or custom prompts. Supports local (tmux + worktrunk) and 
-cloud (Daytona) runtimes.`,
+	Short: "Local orchestrator for task descriptions and PR reviews",
+	Long: `shiphq creates isolated local worktrees and tmux-backed agent sessions 
+from task descriptions (GitHub issues, Jira tickets, custom prompts) and for PR reviews.`,
 }
 
 var createCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a new agent session from an issue or prompt",
+	Short: "Create a new worker session from a task description or PR review target",
 	RunE:  createCmdRun,
 }
 
@@ -60,7 +65,6 @@ func init() {
 	createCmd.Flags().IntVar(&githubFlag, "github", 0, "GitHub issue/PR number")
 	createCmd.Flags().StringVar(&jiraFlag, "jira", "", "Jira ticket ID (e.g., PROJ-123)")
 	createCmd.Flags().StringVar(&promptFlag, "prompt", "", "Raw prompt text")
-	createCmd.Flags().StringVar(&runtimeFlag, "runtime", "local", "Runtime backend (local, daytona)")
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
 	createCmd.Flags().StringVar(&agentFlag, "agent", "opencode", "AI agent to spawn (opencode, claude, codex, or custom)")
@@ -77,79 +81,121 @@ func main() {
 }
 
 func createCmdRun(cmd *cobra.Command, args []string) error {
-	project := projectFlag
-	if project == "" {
-		project = detectProject()
-	}
-
-	var task adapters.Task
-	var err error
-
-	switch {
-	case githubFlag != 0:
-		task, err = adapters.FetchGitHub(githubFlag, typeFlag)
-		if promptFlag != "" {
-			task.Prompt = promptFlag
-		}
-	case jiraFlag != "":
-		task, err = adapters.FetchJira(jiraFlag)
-		if promptFlag != "" {
-			task.Prompt = promptFlag
-		}
-	case promptFlag != "":
-		task = adapters.TaskFromPrompt(promptFlag)
-	default:
-		return fmt.Errorf("must specify --github, --jira, or --prompt")
-	}
-
+	project, err := resolveProjectName(projectFlag)
 	if err != nil {
 		return err
 	}
 
-	rt, err := runtime.Get(runtimeFlag)
+	createInput, err := createinput.ResolveCreateInput(githubFlag, jiraFlag, promptFlag, typeFlag)
 	if err != nil {
 		return err
 	}
 
-	session, err := rt.Create(project, task, agentFlag)
+	workItem, err := source.Fetch(createInput.SourceRef)
+	if err != nil {
+		return err
+	}
+
+	repositoryTarget, err := repository.DetectTarget()
+	if err != nil {
+		return err
+	}
+
+	workerPrompt := promptbuilder.BuildDefault(workItem, repositoryTarget)
+	if createInput.PromptOverride != "" {
+		workerPrompt = promptbuilder.BuildOverride(workItem, repositoryTarget, createInput.PromptOverride)
+	}
+
+	localRuntime := runtime.LocalRuntime{}
+	session, err := localRuntime.Create(project, workItem, workerPrompt, agentFlag)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("✓ Created session: %s\n", session.ID)
-	fmt.Printf("  Runtime: %s\n", session.Runtime)
 	fmt.Printf("  Attach: shiphq attach %s\n", session.ID)
 	return nil
 }
 
 func listCmdRun(cmd *cobra.Command, args []string) error {
-	rt, _ := runtime.Get("local")
-	sessions, err := rt.List(detectProject())
+	project, err := resolveProjectName("")
+	if err != nil {
+		return err
+	}
+
+	localRuntime := runtime.LocalRuntime{}
+	sessions, err := localRuntime.List(project)
 	if err != nil {
 		return err
 	}
 
 	for _, s := range sessions {
-		fmt.Printf("%s (%s) - %s\n", s.ID, s.Runtime, s.Status)
+		fmt.Printf("%s - %s\n", s.ID, s.Status)
 	}
 	return nil
 }
 
 func attachCmdRun(cmd *cobra.Command, args []string) error {
-	rt, _ := runtime.Get("local")
-	return rt.Attach(args[0])
+	localRuntime := runtime.LocalRuntime{}
+	return localRuntime.Attach(args[0])
 }
 
 func cleanupCmdRun(cmd *cobra.Command, args []string) error {
-	rt, _ := runtime.Get("local")
-	return rt.Cleanup(idFlag)
+	localRuntime := runtime.LocalRuntime{}
+	return localRuntime.Cleanup(idFlag)
+}
+
+func resolveProjectName(project string) (string, error) {
+	projectName := project
+	if projectName == "" {
+		projectName = detectProject()
+	}
+
+	normalizedProjectName := workitem.NormalizeIdentifier(projectName)
+	if normalizedProjectName == "" {
+		return "", fmt.Errorf("project name cannot be empty")
+	}
+
+	return normalizedProjectName, nil
 }
 
 func detectProject() string {
+	if project := detectProjectFromGit(); project != "" {
+		return project
+	}
+
 	wd, _ := os.Getwd()
 	base := filepath.Base(wd)
 	if base == "." || base == "/" || base == "" {
 		return "project"
 	}
 	return base
+}
+
+func detectProjectFromGit() string {
+	cmd := exec.Command("git", "rev-parse", "--git-common-dir")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	commonDir := strings.TrimSpace(string(out))
+	if commonDir == "" {
+		return ""
+	}
+
+	if !filepath.IsAbs(commonDir) {
+		wd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		commonDir = filepath.Join(wd, commonDir)
+	}
+
+	commonDir = filepath.Clean(commonDir)
+	if filepath.Base(commonDir) == ".git" {
+		return filepath.Base(filepath.Dir(commonDir))
+	}
+
+	return filepath.Base(commonDir)
 }

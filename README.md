@@ -1,91 +1,137 @@
 # shiphq
 
-**Local agent orchestration** that enables you and your **orchestrator AI agent** to spawn parallel worker agents from GitHub issues, PRs, Jira tickets, or custom prompts—each running in isolated Git worktrees + tmux sessions.
+shiphq turns repo work into a local delivery workflow: take task descriptions (GitHub issues, Jira tickets, custom prompts), create an isolated worktree, start a tmux session, hand the work to an agent, and drive it all the way to a PR. It can also run PR review workflows in the same local environment.
 
-Chat naturally with your orchestrator about what needs to be done. It uses the built-in [orchestrator skill](./skill/SKILL.md) to understand your intent and automatically dispatches specialized agents in parallel. You stay in control while the orchestrator handles the logistics.
+This is the point of shiphq: it is not just a headless agent launcher. Each worker runs in a normal tmux session on your machine, so you can attach at any time, open more windows, run `docker compose`, tail logs, edit files manually, and benefit from WorkTrunk hooks that make local worktrees fast.
 
-Need to jump in? Use tmux session switchers to fuzzy-find and instantly attach to any running agent. Each session is a persistent workspace you can peek into, override, or collaborate with anytime.
+## What shiphq is optimizing for
 
-> **Note:** Currently supports **local workflow only** (WorkTrunk + tmux + opencode). Cloud sandbox support (Daytona, etc.) is planned for future releases.
+- Task descriptions in, PRs out
+- Local execution, not opaque remote sandboxes
+- Persistent tmux sessions you can jump into whenever you want
+- WorkTrunk-managed worktrees that are easy to create and easy to clean up
+- An orchestrator agent that dispatches work without taking control away from the human
+- PR review in the same workflow when you need it
 
-## How It Works
+## Why this is different
 
-**The core idea:** Chat with your orchestrator agent about what needs to be done, and it spawns parallel worker agents for each task.
+Other agent workflows stop at "spawn an agent and wait." shiphq keeps the whole workflow inside the tooling you already use:
 
-```
-You (in orchestrator session)
-│
-├─ "Fix login bug #456"     →  Orchestrator uses shiphq skill
-│                               └─ shiphq create --github 456 -t issue
-│                                  ├─ Creates: github-issue-456 worktree
-│                                  ├─ Starts: tmux session blog-github-issue-456
-│                                  └─ Spawns: opencode agent with issue context
-│
-└─ "Review PR #234"         →  Orchestrator spawns another agent
-                                  └─ shiphq create --github 234 -t pr
-                                     └─ Parallel agent session
+- **tmux sessions** stay alive in the background and are easy to fuzzy-find
+- **worktrees** give each agent an isolated branch and filesystem
+- **manual intervention** is normal; you can drop in, run servers, inspect logs, or pair with the agent
+- **WorkTrunk hooks** can copy ignored files and caches so workers avoid cold starts
 
-Result: Multiple isolated worktrees + tmux sessions + running agents
-```
+The worker session is a real development workspace, not just a background job.
 
-## Workflow
+## Supported workflows
 
-1. **Setup bare repo** with [WorkTrunk](https://worktrunk.dev/)
+- GitHub issues create worker sessions for implementation and PR delivery
+- GitHub PRs create worker sessions for review
+- Custom prompts create worker sessions from free-form task descriptions
+- Jira tickets use the same CLI shape, but the Jira provider is not implemented
+- shiphq runs locally with WorkTrunk and tmux
+
+## Default worker behavior
+
+For task descriptions from GitHub issues, shiphq gives the worker an end-to-end delivery prompt by default:
+
+1. implement the task
+2. commit the changes
+3. push the branch
+4. open and submit a GitHub PR with `gh`
+5. report the PR URL back
+
+That same end-to-end behavior is the intended default for task descriptions from Jira tickets once the Jira adapter is implemented.
+
+GitHub PR inputs are different: those workers default to a review prompt rather than an implementation prompt.
+
+If you pass `--prompt` alongside `--github` or `--jira`, shiphq uses your instructions and includes the fetched source context.
+
+## Core workflow
+
+1. **Start from the default worktree**
+
    ```bash
-   git clone --bare <repo> project/.git && cd project
-   wt switch ^   # Creates worktree for default branch (usually dev, could be main)
-                 # ^ = default branch shorthand. wt cds into it automatically.
+   git clone --bare <repo-url> project/.git
+   cd project
+   wt switch ^
    ```
 
-2. **Start orchestrator** (already in the default branch worktree)
+2. **Run your orchestrator in tmux**
+
    ```bash
    tmux new -s project-dev
-   opencode  # Load the shiphq skill and chat with your orchestrator
+   opencode
    ```
 
-3. **Discuss and dispatch** with your orchestrator
-   
-   Simply chat naturally about what needs to be done:
-   ```
-   You: "Fix the login bug (#456) and review PR #234"
-   
-   Orchestrator: Uses shiphq skill to spawn agents automatically
-   → shiphq create --github 456 -t issue
-   → shiphq create --github 234 -t pr
-   ```
-   
-   The orchestrator understands your intent and runs the right commands.
+3. **Spawn workers from task descriptions or PR review targets**
 
-4. **Switch sessions** - Jump into any agent's workspace 
-   
-   **Recommended:** Use [tmux-sessionx](https://github.com/omerxx/tmux-sessionx) to fuzzy-find and switch:
    ```bash
-   # Press prefix + f, fuzzy find "blog-github-issue-456"
-   ```
-   
-   *Alternative:* You can use any tmux session manager, or attach directly:
-   ```bash
-   shiphq attach blog-github-issue-456
+   shiphq create --github 456 -t issue
+   shiphq create --github 234 -t pr
+   shiphq create --prompt "Refactor authentication middleware"
    ```
 
-5. **Cleanup** when done
+4. **Jump into a worker whenever you want**
+
    ```bash
-   shiphq cleanup --id blog-github-issue-456
+   shiphq attach project-github-issue-456
    ```
+
+   Or use a tmux session switcher such as `tmux-sessionx`.
+
+5. **Clean up when the work is done**
+
+   ```bash
+   shiphq cleanup --id project-github-issue-456
+   ```
+
+## What `create` does
+
+For a task description like `shiphq create --github 456 -t issue`, shiphq:
+
+1. fetches the issue title and body with `gh`
+2. creates an isolated branch/worktree
+3. starts a tmux session named `{project}-{source}-{type}-{id}`
+4. starts the selected agent inside that worktree
+5. gives the worker a prompt that aims at implementation plus PR creation
+
+The worker runs in the background. The human can attach. The orchestrator should not.
+
+## Extensible source architecture
+
+shiphq treats task descriptions as a common internal work-item model rather than baking GitHub-specific behavior into the whole app.
+
+- source providers fetch and normalize work from each system
+- prompt building stays separate, so GitHub issues still get GitHub-specific prompts and Jira tickets still get Jira-specific prompts
+- repository target detection is separate from task sources, which keeps future Jira-to-GitLab or Jira-to-Bitbucket workflows clean
+- session metadata is stored explicitly instead of being reconstructed from session names
+
+Built-in providers:
+
+- GitHub issue
+- GitHub PR
+- custom prompt
+- Jira ticket stub
 
 ## Dependencies
 
-| Tool | Purpose | Links |
-|------|---------|-------|
-| [WorkTrunk](https://worktrunk.dev/) | Git worktree management | [Install](https://worktrunk.dev/worktrunk/) · [GitHub](https://github.com/max-sixty/worktrunk) |
-| [tmux](https://github.com/tmux/tmux) | Terminal multiplexer | [GitHub](https://github.com/tmux/tmux) |
-| AI Agent (pick one): | | |
-| ├─ [opencode](https://opencode.ai/) | Default AI agent | [Website](https://opencode.ai/) |
-| ├─ [claude-code](https://docs.anthropic.com/en/docs/claude-code) | Claude Code by Anthropic | [Docs](https://docs.anthropic.com/en/docs/claude-code) |
-| └─ [codex](https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started) | Codex CLI by OpenAI | [Install](https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started) |
-| [GitHub CLI](https://cli.github.com/) | Fetch GitHub issues | [Install](https://github.com/cli/cli#installation) · [Manual](https://cli.github.com/manual/) |
-| [tmux-sessionx](https://github.com/omerxx/tmux-sessionx) | Fuzzy find tmux sessions | [GitHub](https://github.com/omerxx/tmux-sessionx) |
-| Jira CLI (optional) | Fetch Jira tickets | [Install](https://github.com/ankitpokhrel/jira-cli) |
+| Tool | Purpose |
+|------|---------|
+| [WorkTrunk](https://worktrunk.dev/) | Create and manage isolated worktrees |
+| [tmux](https://github.com/tmux/tmux) | Persistent local worker sessions |
+| [GitHub CLI](https://cli.github.com/) | Fetch GitHub task descriptions and open PRs |
+| [tmux-sessionx](https://github.com/omerxx/tmux-sessionx) | Optional fuzzy tmux session switcher |
+| AI agent CLI | Run the actual worker inside each session |
+
+Built-in agent support:
+
+- `opencode` (default)
+- `claude`
+- `codex`
+
+You can also add custom agents through config.
 
 ## Installation
 
@@ -96,133 +142,70 @@ go install github.com/obiMadu/shiphq@latest
 ## Usage
 
 ```bash
-# Create agent from GitHub issue (requires --type flag)
+# GitHub issue -> implement -> push -> open PR
 shiphq create --github 456 -t issue
-shiphq create --github 456 -t pr     # For PR reviews
 
-# Create agent from Jira ticket
-shiphq create --jira PROJ-123  
+# GitHub PR -> review
+shiphq create --github 456 -t pr
 
-# Create agent from custom prompt
-shiphq create --prompt "Custom task"
+# Custom instructions plus issue context
+shiphq create --github 456 -t issue --prompt "Start by writing tests"
 
-# Override default prompt with custom instructions
-shiphq create --github 456 -t issue --prompt "Focus on test coverage"
+# Custom prompt task
+shiphq create --prompt "Refactor authentication middleware"
 
-# Use different AI agents (built-in: opencode, claude, codex)
+# Jira shape (adapter not implemented yet)
+shiphq create --jira PROJ-123
+
+# Use a different built-in agent if explicitly requested
 shiphq create --github 456 -t issue --agent claude
-shiphq create --github 456 -t issue --agent codex
 
-# Manage sessions
-shiphq list                                    # Show all sessions for current project
-shiphq attach blog-github-issue-456             # Attach directly
-shiphq cleanup --id blog-github-issue-456       # Remove worktree + tmux
+# Session management
+shiphq list
+shiphq attach project-github-issue-456
+shiphq cleanup --id project-github-issue-456
 ```
 
-## Supported AI Agents
+## Custom agents
 
-shiphq supports multiple AI coding agents out of the box:
-
-| Agent | Command | Prompt Flag | Notes |
-|-------|---------|-------------|-------|
-| **opencode** (default) | `opencode` | `--prompt` | OpenCode AI agent |
-| **claude** | `claude` | positional | Claude Code by Anthropic |
-| **codex** | `codex` | positional | Codex CLI by OpenAI |
-
-All agents spawn in interactive mode (TUI) so you can jump in and collaborate.
-
-### Adding Custom Agents
-
-You can add support for any AI agent by creating `~/.config/shiphq/config.toml`:
+Create `~/.config/shiphq/config.toml`:
 
 ```toml
 [agents.aider]
 command = "aider"
-prompt_flag = "--message"  # How this agent receives prompts
+prompt_flag = "--message"
 
-[agents.custom-agent]
+[agents.custom]
 command = "my-agent"
-prompt_flag = ""  # Empty = positional argument (agent "prompt")
+prompt_flag = ""
 ```
 
-Then use it: `shiphq create --github 456 -t issue --agent aider`
+Then use it with `--agent aider` or `--agent custom`.
 
-**Why `prompt_flag` matters:** shiphq generates prompts based on issue/PR content (e.g., "Implement GitHub issue #456: Fix login"). The `prompt_flag` tells shiphq how to pass that prompt to your agent:
-- `--prompt` → `opencode --prompt "generated prompt"`
-- `--message` → `aider --message "generated prompt"`
-- `""` (empty) → `claude "generated prompt"` (positional)
+`prompt_flag` tells shiphq how to pass the generated task prompt:
 
-This works for both built-in prompts (from issues/PRs) and custom prompts via `--prompt "custom instructions"`.
+- `--prompt` -> `agent --prompt "..."`
+- `--message` -> `agent --message "..."`
+- `""` -> `agent "..."`
 
-**For maintainers:** Adding new built-in agents is easy—just add two fields:
-- `command`: The CLI command to run
-- `prompt_flag`: How to pass the prompt (`--prompt`, `--message`, or `""` for positional)
+## WorkTrunk hooks
 
-See `internal/agent/agent.go` for the built-in registry.
+WorkTrunk is a big part of the value here. Hooks can make worker startup much faster by copying ignored files and caches into new worktrees.
 
-## What shiphq Does
-
-1. **Fetches issue/PR/ticket** via GitHub/Jira CLI → extracts title + description
-2. **Creates branch** from issue → `github-issue-456` (uses number only)
-3. **Creates worktree** via `wt switch --create`
-4. **Starts tmux session** → `blog-github-issue-456` (format: {project}-{source}-{type}-{id})
-5. **Spawns agent** → Your choice of AI agent (opencode, claude, codex, or custom) with the task prompt
-6. **Cleans up** worktree + tmux on `cleanup`
-
-## Why tmux?
-
-Each agent session runs in **tmux** (not headless) so you can:
-
-- **Jump in anytime** to override the agent or do manual work
-- **Create new windows** for editing (`vim`), running servers (`npm run dev`), debugging (`docker-compose up`)
-- **Multiple panes** - agent in one, logs in another, tests in a third
-
-It's a persistent workspace, not just a background process.
-
-## WorkTrunk Optimizations
-
-Configure [WorkTrunk hooks](https://worktrunk.dev/hook/) in `~/.config/worktrunk/config.toml`:
+Example `~/.config/worktrunk/config.toml`:
 
 ```toml
 [post-start]
-# Copy gitignored files (node_modules/, .env, build caches) to skip cold starts
 copy = "wt step copy-ignored"
 ```
 
-This shares dependencies between worktrees so agents don't reinstall from scratch.
+That lets workers reuse things like `node_modules`, `.env`, or build caches instead of rebuilding everything from scratch.
 
-## Architecture
+## Limitations
 
-**Current implementation: Local only**
-
-```
-┌──────────────────┐
-│ Orchestrator     │ You chat here, dispatch work
-│ (tmux: dev)      │
-└────────┬─────────┘
-         │ shiphq create --github 456 -t issue --agent claude
-         ▼
-┌──────────────────────────────────┐
-│ blog-github-issue-456            │
-│ ├─ Worktree: ./github-issue-456  │
-│ ├─ Tmux: 2 windows               │
-│ └─ Agent: claude (or opencode,   │
-│            codex, or custom)      │
-└──────────────────────────────────┘
-```
-
-**Future:** Cloud runtime support (Daytona sandboxes, etc.) for remote agent execution.
-
-## Commands
-
-- `create --github <num> -t <type>` - Spawn agent from GitHub issue/PR (type: issue, pr)
-- `create --jira <id>` - Spawn agent from Jira ticket
-- `create --prompt "text"` - Spawn agent from custom prompt
-- `create ... --agent <name>` - Use specific AI agent (opencode, claude, codex, or custom)
-- `create ... --prompt "custom"` - Override default prompt with custom instructions
-- `list` - Show active sessions for current project
-- `attach <id>` - Attach to tmux session
-- `cleanup --id <id>` - Remove worktree and session
+- Jira support is still a stub, so GitHub issues are the main end-to-end task-description path
+- Remote runtimes are not implemented; shiphq is local-first
+- shiphq is strongest when you stay in the local tmux/worktree workflow; that is the product, not an implementation detail
 
 ## License
 

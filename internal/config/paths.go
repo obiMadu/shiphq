@@ -31,3 +31,29 @@ func GetConfigPath() string {
 func EnsureConfigDir() error {
 	return os.MkdirAll(GetConfigDir(), 0755)
 }
+
+// GetStateDir returns the XDG-compliant state directory for shiphq
+// Uses XDG_STATE_HOME if set, otherwise ~/.local/state
+func GetStateDir() string {
+	xdgState := os.Getenv("XDG_STATE_HOME")
+	if xdgState != "" {
+		return filepath.Join(xdgState, "shiphq")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "shiphq-state"
+	}
+
+	return filepath.Join(home, ".local", "state", "shiphq")
+}
+
+// GetSessionStateDir returns the directory used for session metadata
+func GetSessionStateDir() string {
+	return filepath.Join(GetStateDir(), "sessions")
+}
+
+// EnsureSessionStateDir creates the session metadata directory if needed
+func EnsureSessionStateDir() error {
+	return os.MkdirAll(GetSessionStateDir(), 0755)
+}
