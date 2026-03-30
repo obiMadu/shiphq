@@ -135,7 +135,7 @@ When `--agent` is omitted, shiphq uses `agents.default.name` from `~/.config/shi
 | **claude** | `claude` | positional | Claude Code by Anthropic |
 | **codex** | `codex` | positional | Codex CLI by OpenAI |
 
-All agents spawn in interactive mode (TUI) so you can jump in and collaborate. shiphq writes the full task brief to `prompt.md` in the worktree, then sends a small bootstrap instruction using the agent's configured prompt delivery style.
+All agents spawn in interactive mode (TUI) so you can jump in and collaborate. shiphq writes the full task brief to `.shiphq/prompt.md` in the worktree, ignores `/.shiphq/` via the worktree-local Git exclude, then sends a small bootstrap instruction using the agent's configured prompt delivery style.
 
 ### Adding Custom Agents
 
@@ -181,10 +181,10 @@ Set `agents.default.name` to any agent table name in the config. That can be one
 
 Then use it: `shiphq create --github 456 -t issue --agent aider`
 
-**Why `prompt_flag` matters:** shiphq writes the full brief to `prompt.md`, then passes a bootstrap prompt that tells the agent to read that file. The `prompt_flag` tells shiphq how to send that bootstrap prompt:
-- `--prompt` → `opencode --prompt "Read ./prompt.md and use it as the full task brief."`
-- `--message` → `aider --message "Read ./prompt.md and use it as the full task brief."`
-- `""` (empty) → `pi "Read ./prompt.md and use it as the full task brief."` (positional)
+**Why `prompt_flag` matters:** shiphq writes the full brief to `.shiphq/prompt.md`, then passes a bootstrap prompt that tells the agent to read that file. The `prompt_flag` tells shiphq how to send that bootstrap prompt:
+- `--prompt` → `opencode --prompt "Read ./.shiphq/prompt.md and use it as the full task brief."`
+- `--message` → `aider --message "Read ./.shiphq/prompt.md and use it as the full task brief."`
+- `""` (empty) → `pi "Read ./.shiphq/prompt.md and use it as the full task brief."` (positional)
 
 For custom agents, `prompt_flag` is optional. If you leave it out, shiphq uses positional prompt delivery.
 
@@ -198,7 +198,7 @@ This works for both built-in prompts (from issues/PRs) and custom prompts via `-
 2. **Creates branch** from issue → `github-issue-456` (uses number only)
 3. **Creates worktree** via `wt switch --create`
 4. **Starts tmux session** → `blog-github-issue-456` (format: {project}-{source}-{type}-{id})
-5. **Writes `prompt.md`** in the worktree with the full task brief
+5. **Writes `.shiphq/prompt.md`** in the worktree with the full task brief and ignores `/.shiphq/` locally
 6. **Spawns agent** → Your choice of AI agent (pi, opencode, claude, codex, or custom) with a bootstrap prompt
 7. **Cleans up** worktree + tmux on `cleanup`
 

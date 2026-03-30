@@ -20,7 +20,12 @@ type Session struct {
 
 type LocalRuntime struct{}
 
-const workerPromptFileName = "prompt.md"
+const (
+	workerPromptDirName        = ".shiphq"
+	workerPromptFileName       = "prompt.md"
+	workerPromptRelativePath   = workerPromptDirName + "/" + workerPromptFileName
+	workerPromptExcludePattern = "/.shiphq/"
+)
 
 func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string) (Session, error) {
 	sessionLabel, err := generateBranchName(workItem)
@@ -55,15 +60,15 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 		return Session{}, withCreateRollback(fmt.Errorf("failed to resolve worktree branch: %w", err), sessionID, worktreePath)
 	}
 
-	if err := ignoreWorktreeFile(worktreePath, workerPromptFileName); err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to ignore worker prompt file: %w", err), sessionID, worktreePath)
+	if err := ignoreWorktreePattern(worktreePath, workerPromptExcludePattern); err != nil {
+		return Session{}, withCreateRollback(fmt.Errorf("failed to ignore worker prompt directory: %w", err), sessionID, worktreePath)
 	}
 
 	if err := writeWorkerPromptFile(worktreePath, workerPrompt); err != nil {
 		return Session{}, withCreateRollback(fmt.Errorf("failed to write worker prompt file: %w", err), sessionID, worktreePath)
 	}
 
-	bootstrapPrompt := buildBootstrapPrompt(workerPromptFileName)
+	bootstrapPrompt := buildBootstrapPrompt(workerPromptRelativePath)
 	agentCommand := configuredAgent.BuildCommand(bootstrapPrompt)
 	sessionCommand, err := buildSessionCommand(agentCommand)
 	if err != nil {
@@ -114,10 +119,14 @@ func (localRuntime LocalRuntime) List(project string) ([]Session, error) {
 }
 
 func writeWorkerPromptFile(worktreePath, prompt string) error {
-	promptPath := filepath.Join(worktreePath, workerPromptFileName)
+	promptPath := filepath.Join(worktreePath, workerPromptRelativePath)
 	promptContents := prompt
 	if !strings.HasSuffix(promptContents, "\n") {
 		promptContents += "\n"
+	}
+
+	if err := os.MkdirAll(filepath.Dir(promptPath), 0755); err != nil {
+		return fmt.Errorf("failed to create prompt directory for %s: %w", promptPath, err)
 	}
 
 	if err := os.WriteFile(promptPath, []byte(promptContents), 0644); err != nil {
@@ -127,7 +136,7 @@ func writeWorkerPromptFile(worktreePath, prompt string) error {
 	return nil
 }
 
-func ignoreWorktreeFile(worktreePath, fileName string) error {
+func ignoreWorktreePattern(worktreePath, pattern string) error {
 	gitDir, err := findGitDir(worktreePath)
 	if err != nil {
 		return err
@@ -138,7 +147,6 @@ func ignoreWorktreeFile(worktreePath, fileName string) error {
 		return fmt.Errorf("failed to prepare exclude file directory: %w", err)
 	}
 
-	pattern := "/" + fileName
 	existingContents, err := os.ReadFile(excludePath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read %s: %w", excludePath, err)
