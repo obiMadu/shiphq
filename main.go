@@ -9,6 +9,7 @@ import (
 
 	"github.com/obiMadu/shiphq/internal/agent"
 	createinput "github.com/obiMadu/shiphq/internal/cli"
+	"github.com/obiMadu/shiphq/internal/config"
 	promptbuilder "github.com/obiMadu/shiphq/internal/prompt"
 	"github.com/obiMadu/shiphq/internal/repository"
 	"github.com/obiMadu/shiphq/internal/runtime"
@@ -69,13 +70,18 @@ func init() {
 	createCmd.Flags().StringVar(&promptFlag, "prompt", "", "Raw prompt text")
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
-	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to config agents.default.name, otherwise pi)")
+	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to config agents.default.name)")
 
 	cleanupCmd.Flags().StringVar(&idFlag, "id", "", "Session ID to cleanup")
 	cleanupCmd.MarkFlagRequired("id")
 }
 
 func main() {
+	if err := config.EnsureConfigFile(defaultConfigFileContents); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

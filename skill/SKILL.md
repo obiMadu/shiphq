@@ -42,11 +42,11 @@ You are the orchestrator running in the main tmux session.
 
 ## Default agent choice
 
-Fallback default worker agent: `pi`
+shiphq uses `agents.default.name` from `~/.config/shiphq/config.toml`.
 
-If `~/.config/shiphq/config.toml` sets `agents.default.name`, plain `shiphq create` uses that instead. That can point to a built-in agent or a custom agent defined under `[agents.<name>]`.
+On first run, shiphq creates that config file if it does not exist yet. The generated config includes the bundled agent definitions (`pi`, `opencode`, `claude`, `codex`) and sets `pi` as the initial default.
 
-Other built-in agents exist (`opencode`, `claude`, `codex`), and users can configure custom agents, but you should only select them when the user explicitly requests them.
+That default can point to one of those bundled agents or to a custom agent the user defines under `[agents.<name>]`, but you should only select a different agent when the user explicitly requests it.
 
 Built-in prompt delivery:
 

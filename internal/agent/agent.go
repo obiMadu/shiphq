@@ -16,8 +16,6 @@ type Agent struct {
 	PromptFlag string   `toml:"prompt_flag"` // How to pass prompt: "--prompt", "--message", "" (for positional)
 }
 
-const fallbackDefaultAgentName = "pi"
-
 // BuildCommand builds a shell-safe command string for tmux.
 func (a Agent) BuildCommand(prompt string) string {
 	parts := []string{shellQuote(a.Command)}
@@ -48,26 +46,6 @@ func (a Agent) Validate() error {
 	return nil
 }
 
-// Built-in agents registry - easy for maintainers to add new ones here
-var builtinAgents = map[string]Agent{
-	"pi": {
-		Command:    "pi",
-		PromptFlag: "",
-	},
-	"opencode": {
-		Command:    "opencode",
-		PromptFlag: "--prompt",
-	},
-	"claude": {
-		Command:    "claude",
-		PromptFlag: "", // Positional: claude "..."
-	},
-	"codex": {
-		Command:    "codex",
-		PromptFlag: "", // Positional: codex "..."
-	},
-}
-
 // Config represents agent-related user configuration.
 type Config struct {
 	DefaultAgent DefaultAgentConfig
@@ -87,7 +65,7 @@ func DefaultName() (string, error) {
 
 	configuredDefault := strings.TrimSpace(cfg.DefaultAgent.Name)
 	if configuredDefault == "" {
-		return fallbackDefaultAgentName, nil
+		return "", fmt.Errorf("agents.default.name is not configured in %s", config.GetConfigPath())
 	}
 
 	if _, err := lookup(configuredDefault, cfg); err != nil {
@@ -97,20 +75,13 @@ func DefaultName() (string, error) {
 	return configuredDefault, nil
 }
 
-// Get retrieves an agent by name
-// Checks built-in first, then user config
+// Get retrieves an agent by name from config.
 func Get(name string) (Agent, error) {
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
 		return Agent{}, fmt.Errorf("agent name cannot be empty")
 	}
 
-	// First check built-in agents
-	if agent, ok := builtinAgents[trimmedName]; ok {
-		return agent, nil
-	}
-
-	// Then check user config
 	cfg, err := loadUserConfig()
 	if err != nil {
 		return Agent{}, err
@@ -119,22 +90,16 @@ func Get(name string) (Agent, error) {
 	return lookup(trimmedName, cfg)
 }
 
-// List returns all supported agent names (built-in + user-defined)
+// List returns all configured agent names.
 func List() []string {
-	names := make([]string, 0, len(builtinAgents))
-	for name := range builtinAgents {
-		names = append(names, name)
+	cfg, err := loadUserConfig()
+	if err != nil || cfg.Agents == nil {
+		return nil
 	}
 
-	// Add user-defined agents
-	cfg, err := loadUserConfig()
-	if err == nil && cfg.Agents != nil {
-		for name := range cfg.Agents {
-			// Skip if already in built-in
-			if _, ok := builtinAgents[name]; !ok {
-				names = append(names, name)
-			}
-		}
+	names := make([]string, 0, len(cfg.Agents))
+	for name := range cfg.Agents {
+		names = append(names, name)
 	}
 
 	return names
@@ -182,10 +147,6 @@ func loadUserConfig() (*Config, error) {
 }
 
 func lookup(name string, cfg *Config) (Agent, error) {
-	if agent, ok := builtinAgents[name]; ok {
-		return agent, nil
-	}
-
 	if cfg != nil && cfg.Agents != nil {
 		if agent, ok := cfg.Agents[name]; ok {
 			if err := agent.Validate(); err != nil {
@@ -195,5 +156,5 @@ func lookup(name string, cfg *Config) (Agent, error) {
 		}
 	}
 
-	return Agent{}, fmt.Errorf("unknown agent: %s (supported built-in: pi, opencode, claude, codex)", name)
+	return Agent{}, fmt.Errorf("unknown agent: %s (define it under [agents.%s] in %s)", name, name, config.GetConfigPath())
 }

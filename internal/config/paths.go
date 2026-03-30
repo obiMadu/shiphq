@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -30,6 +31,36 @@ func GetConfigPath() string {
 // EnsureConfigDir creates the config directory if it doesn't exist
 func EnsureConfigDir() error {
 	return os.MkdirAll(GetConfigDir(), 0755)
+}
+
+// EnsureConfigFile creates the config file with the provided contents if it does not exist yet.
+func EnsureConfigFile(contents []byte) error {
+	configPath := GetConfigPath()
+
+	if _, err := os.Stat(configPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to inspect config file %s: %w", configPath, err)
+	}
+
+	if err := EnsureConfigDir(); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	configFile, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to create config file %s: %w", configPath, err)
+	}
+	defer configFile.Close()
+
+	if _, err := configFile.Write(contents); err != nil {
+		return fmt.Errorf("failed to write config file %s: %w", configPath, err)
+	}
+
+	return nil
 }
 
 // GetStateDir returns the XDG-compliant state directory for shiphq

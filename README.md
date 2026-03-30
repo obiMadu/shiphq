@@ -123,11 +123,13 @@ shiphq cleanup --id blog-github-issue-456       # Remove worktree + tmux
 
 ## Supported AI Agents
 
-shiphq supports multiple AI coding agents out of the box. When `--agent` is omitted, shiphq uses `agents.default.name` from `~/.config/shiphq/config.toml`; if that is unset, it falls back to `pi`.
+shiphq creates `~/.config/shiphq/config.toml` on first run if it does not exist. That generated file includes the default agent selection plus the bundled agent definitions, so you can edit how `pi`, `opencode`, `claude`, and `codex` launch without touching code.
+
+When `--agent` is omitted, shiphq uses `agents.default.name` from `~/.config/shiphq/config.toml`. Freshly generated configs default that to `pi`.
 
 | Agent | Command | Prompt delivery | Notes |
 |-------|---------|-----------------|-------|
-| **pi** (fallback default) | `pi` | positional | Pi coding agent from [pi.dev](https://pi.dev/) |
+| **pi** (default in generated config) | `pi` | positional | Pi coding agent from [pi.dev](https://pi.dev/) |
 | **opencode** | `opencode` | `--prompt` | OpenCode AI agent |
 | **claude** | `claude` | positional | Claude Code by Anthropic |
 | **codex** | `codex` | positional | Codex CLI by OpenAI |
@@ -136,32 +138,45 @@ All agents spawn in interactive mode (TUI) so you can jump in and collaborate. s
 
 ### Adding Custom Agents
 
-You can add support for any AI agent, and choose the default one shiphq uses, by creating `~/.config/shiphq/config.toml`:
+You can edit the generated config or create it ahead of time yourself. The shipped template is `config.example.toml`, and shiphq copies it to `~/.config/shiphq/config.toml` on first run when that file is missing:
 
 ```toml
+# ShipHQ writes this template to ~/.config/shiphq/config.toml on first run if the file does not exist.
+
 # Default agent selection.
 [agents.default]
-# Built-in agent names: pi, opencode, claude, codex.
-# For a custom agent, use whatever comes after `agents.` in its definition.
+# Use one of the built-in agent names below, or whatever comes after `agents.` in a custom agent definition.
 name = "pi"
 
-# Custom agent definitions.
-# Each [agents.<name>] block defines one custom agent.
+# Built-in agent definitions.
+[agents.pi]
+command = "pi"
+prompt_flag = ""
+
+[agents.opencode]
+command = "opencode"
+prompt_flag = "--prompt"
+
+[agents.claude]
+command = "claude"
+prompt_flag = ""
+
+[agents.codex]
+command = "codex"
+prompt_flag = ""
+
+# Custom agent examples.
 # `prompt_flag` is optional. If you omit it, shiphq passes the prompt positionally.
-[agents.aider]
-command = "aider"
-prompt_flag = "--message"  # How this agent receives prompts
+# [agents.aider]
+# command = "aider"
+# prompt_flag = "--message"
 
-[agents.custom-agent]
-command = "my-agent"
-prompt_flag = ""  # Empty = positional argument (agent "prompt")
-
-[agents.custom-agent-with-args]
-command = "my-agent"
-args = ["run", "--profile", "coding"]
+# [agents.custom-agent-with-args]
+# command = "my-agent"
+# args = ["run", "--profile", "coding"]
 ```
 
-Set `agents.default.name` to any built-in agent (`pi`, `opencode`, `claude`, `codex`) or to the name of any custom agent you define under `[agents.<name>]`. `--agent` still overrides the config for a single run.
+Set `agents.default.name` to any agent table name in the config. That can be one of the generated built-ins (`pi`, `opencode`, `claude`, `codex`) or a custom `[agents.<name>]` block you add yourself. `--agent` still overrides the config for a single run.
 
 Then use it: `shiphq create --github 456 -t issue --agent aider`
 
@@ -174,13 +189,7 @@ For custom agents, `prompt_flag` is optional. If you leave it out, shiphq uses p
 
 This works for both built-in prompts (from issues/PRs) and custom prompts via `--prompt "custom instructions"`.
 
-**For maintainers:** Adding new built-in agents is usually just these fields:
-- `command`: The CLI command to run
-- `prompt_flag`: How to pass the prompt (`--prompt`, `--message`, or `""` for positional)
-
-If a CLI needs fixed arguments before the prompt, you can also set `args`.
-
-See `internal/agent/agent.go` for the built-in registry.
+**For maintainers:** shipped agent defaults now live in `config.example.toml`, which shiphq copies to `~/.config/shiphq/config.toml` on first run.
 
 ## What shiphq Does
 

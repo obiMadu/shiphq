@@ -65,8 +65,12 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 
 	bootstrapPrompt := buildBootstrapPrompt(workerPromptFileName)
 	agentCommand := configuredAgent.BuildCommand(bootstrapPrompt)
+	sessionCommand, err := buildSessionCommand(agentCommand)
+	if err != nil {
+		return Session{}, withCreateRollback(fmt.Errorf("failed to build session shell command: %w", err), sessionID, worktreePath)
+	}
 
-	sessionCreateCommand := exec.Command("tmux", "new-session", "-d", "-s", sessionID, "-n", "agent", "-c", worktreePath, agentCommand)
+	sessionCreateCommand := exec.Command("tmux", "new-session", "-d", "-s", sessionID, "-n", "agent", "-c", worktreePath, sessionCommand)
 	if output, err := sessionCreateCommand.CombinedOutput(); err != nil {
 		return Session{}, withCreateRollback(fmt.Errorf("tmux create failed: %w\n%s", err, output), sessionID, worktreePath)
 	}
@@ -181,6 +185,84 @@ func findGitDir(worktreePath string) (string, error) {
 
 func buildBootstrapPrompt(fileName string) string {
 	return fmt.Sprintf("Read ./%s and use it as the full task brief.", fileName)
+}
+
+func buildSessionCommand(agentCommand string) (string, error) {
+	shellPath, err := resolveSessionShell()
+	if err != nil {
+		return "", err
+	}
+
+	commandArgs, resumeArgs := shellModes(shellPath)
+	resumeShellCommand := buildShellCommand(shellPath, resumeArgs...)
+	script := agentCommand + "; exec " + resumeShellCommand
+
+	return buildShellCommand(shellPath, append(commandArgs, script)...), nil
+}
+
+func resolveSessionShell() (string, error) {
+	candidates := []string{strings.TrimSpace(os.Getenv("SHELL")), "bash", "sh"}
+	seen := make(map[string]struct{}, len(candidates))
+
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+
+		resolvedPath, err := resolveShellPath(candidate)
+		if err == nil {
+			return resolvedPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not resolve shell from $SHELL, bash, or sh")
+}
+
+func resolveShellPath(candidate string) (string, error) {
+	if strings.Contains(candidate, "/") {
+		info, err := os.Stat(candidate)
+		if err != nil {
+			return "", err
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("shell path %s is a directory", candidate)
+		}
+		if info.Mode()&0111 == 0 {
+			return "", fmt.Errorf("shell path %s is not executable", candidate)
+		}
+		return candidate, nil
+	}
+
+	return exec.LookPath(candidate)
+}
+
+func shellModes(shellPath string) ([]string, []string) {
+	switch filepath.Base(shellPath) {
+	case "sh", "dash":
+		return []string{"-i", "-c"}, []string{"-i"}
+	default:
+		return []string{"-i", "-l", "-c"}, []string{"-i", "-l"}
+	}
+}
+
+func buildShellCommand(command string, args ...string) string {
+	parts := []string{shellQuote(command)}
+	for _, arg := range args {
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 func resolveWorktreeSwitch(workItem workitem.WorkItem, defaultBranch string) (string, string, bool, error) {
