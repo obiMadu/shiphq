@@ -36,19 +36,27 @@ You are the orchestrator running in the main tmux session.
 - Spawn workers with `shiphq create`
 - Do not attach to the worker session after spawning it
 - Tell the human how to attach if they want to inspect or intervene
-- Keep using `opencode` by default
-- Only use `--agent <name>` if the user explicitly asks for a different agent
+- Let shiphq use its configured default agent when the user does not specify one
+- Only use `--agent <name>` if the user explicitly asks for a different agent or wants to override config
 - Never recommend or install a different agent on your own
 
 ## Default agent choice
 
-Default worker agent: `opencode`
+Fallback default worker agent: `pi`
 
-Other built-in agents exist (`claude`, `codex`), and users can configure custom agents, but you should only select them when the user explicitly requests them.
+If `~/.config/shiphq/config.toml` sets `agents.default.name`, plain `shiphq create` uses that instead. That can point to a built-in agent or a custom agent defined under `[agents.<name>]`.
+
+Other built-in agents exist (`opencode`, `claude`, `codex`), and users can configure custom agents, but you should only select them when the user explicitly requests them.
+
+Built-in prompt delivery:
+
+- `pi`, `claude`, and `codex` use positional prompts
+- `opencode` uses `--prompt`
 
 Examples:
 
 - default: `shiphq create --github 456 -t issue`
+- user explicitly asks for OpenCode: `shiphq create --github 456 -t issue --agent opencode`
 - user explicitly asks for Claude: `shiphq create --github 456 -t issue --agent claude`
 - user explicitly asks for Codex: `shiphq create --github 456 -t issue --agent codex`
 

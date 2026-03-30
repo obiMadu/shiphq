@@ -6,7 +6,7 @@ Chat naturally with your orchestrator about what needs to be done. It uses the b
 
 Need to jump in? Use tmux session switchers to fuzzy-find and instantly attach to any running agent. Each session is a persistent workspace you can peek into, override, or collaborate with anytime.
 
-> **Note:** Currently supports **local workflow only** (WorkTrunk + tmux + opencode). Cloud sandbox support (Daytona, etc.) is planned for future releases.
+> **Note:** Currently supports **local workflow only** (WorkTrunk + tmux + local agent CLIs such as pi, opencode, claude, or codex). Cloud sandbox support (Daytona, etc.) is planned for future releases.
 
 ## How It Works
 
@@ -19,7 +19,7 @@ You (in orchestrator session)
 │                               └─ shiphq create --github 456 -t issue
 │                                  ├─ Creates: github-issue-456 worktree
 │                                  ├─ Starts: tmux session blog-github-issue-456
-│                                  └─ Spawns: opencode agent with issue context
+│                                  └─ Spawns: default agent with issue context
 │
 └─ "Review PR #234"         →  Orchestrator spawns another agent
                                   └─ shiphq create --github 234 -t pr
@@ -40,7 +40,7 @@ Result: Multiple isolated worktrees + tmux sessions + running agents
 2. **Start orchestrator** (already in the default branch worktree)
    ```bash
    tmux new -s project-dev
-   opencode  # Load the shiphq skill and chat with your orchestrator
+   pi --skill ./skill  # Load the shiphq skill and chat with your orchestrator
    ```
 
 3. **Discuss and dispatch** with your orchestrator
@@ -80,7 +80,8 @@ Result: Multiple isolated worktrees + tmux sessions + running agents
 | [WorkTrunk](https://worktrunk.dev/) | Git worktree management | [Install](https://worktrunk.dev/worktrunk/) · [GitHub](https://github.com/max-sixty/worktrunk) |
 | [tmux](https://github.com/tmux/tmux) | Terminal multiplexer | [GitHub](https://github.com/tmux/tmux) |
 | AI Agent (pick one): | | |
-| ├─ [opencode](https://opencode.ai/) | Default AI agent | [Website](https://opencode.ai/) |
+| ├─ [pi](https://pi.dev/) | Fallback default AI agent | [Website](https://pi.dev/) |
+| ├─ [opencode](https://opencode.ai/) | OpenCode AI agent | [Website](https://opencode.ai/) |
 | ├─ [claude-code](https://docs.anthropic.com/en/docs/claude-code) | Claude Code by Anthropic | [Docs](https://docs.anthropic.com/en/docs/claude-code) |
 | └─ [codex](https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started) | Codex CLI by OpenAI | [Install](https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started) |
 | [GitHub CLI](https://cli.github.com/) | Fetch GitHub issues | [Install](https://github.com/cli/cli#installation) · [Manual](https://cli.github.com/manual/) |
@@ -109,7 +110,8 @@ shiphq create --prompt "Custom task"
 # Override default prompt with custom instructions
 shiphq create --github 456 -t issue --prompt "Focus on test coverage"
 
-# Use different AI agents (built-in: opencode, claude, codex)
+# Use different AI agents (built-in: pi, opencode, claude, codex)
+shiphq create --github 456 -t issue --agent opencode
 shiphq create --github 456 -t issue --agent claude
 shiphq create --github 456 -t issue --agent codex
 
@@ -121,21 +123,31 @@ shiphq cleanup --id blog-github-issue-456       # Remove worktree + tmux
 
 ## Supported AI Agents
 
-shiphq supports multiple AI coding agents out of the box:
+shiphq supports multiple AI coding agents out of the box. When `--agent` is omitted, shiphq uses `agents.default.name` from `~/.config/shiphq/config.toml`; if that is unset, it falls back to `pi`.
 
-| Agent | Command | Prompt Flag | Notes |
-|-------|---------|-------------|-------|
-| **opencode** (default) | `opencode` | `--prompt` | OpenCode AI agent |
+| Agent | Command | Prompt delivery | Notes |
+|-------|---------|-----------------|-------|
+| **pi** (fallback default) | `pi` | positional | Pi coding agent from [pi.dev](https://pi.dev/) |
+| **opencode** | `opencode` | `--prompt` | OpenCode AI agent |
 | **claude** | `claude` | positional | Claude Code by Anthropic |
 | **codex** | `codex` | positional | Codex CLI by OpenAI |
 
-All agents spawn in interactive mode (TUI) so you can jump in and collaborate.
+All agents spawn in interactive mode (TUI) so you can jump in and collaborate. shiphq writes the full task brief to `prompt.md` in the worktree, then sends a small bootstrap instruction using the agent's configured prompt delivery style.
 
 ### Adding Custom Agents
 
-You can add support for any AI agent by creating `~/.config/shiphq/config.toml`:
+You can add support for any AI agent, and choose the default one shiphq uses, by creating `~/.config/shiphq/config.toml`:
 
 ```toml
+# Default agent selection.
+[agents.default]
+# Built-in agent names: pi, opencode, claude, codex.
+# For a custom agent, use whatever comes after `agents.` in its definition.
+name = "pi"
+
+# Custom agent definitions.
+# Each [agents.<name>] block defines one custom agent.
+# `prompt_flag` is optional. If you omit it, shiphq passes the prompt positionally.
 [agents.aider]
 command = "aider"
 prompt_flag = "--message"  # How this agent receives prompts
@@ -143,20 +155,30 @@ prompt_flag = "--message"  # How this agent receives prompts
 [agents.custom-agent]
 command = "my-agent"
 prompt_flag = ""  # Empty = positional argument (agent "prompt")
+
+[agents.custom-agent-with-args]
+command = "my-agent"
+args = ["run", "--profile", "coding"]
 ```
+
+Set `agents.default.name` to any built-in agent (`pi`, `opencode`, `claude`, `codex`) or to the name of any custom agent you define under `[agents.<name>]`. `--agent` still overrides the config for a single run.
 
 Then use it: `shiphq create --github 456 -t issue --agent aider`
 
-**Why `prompt_flag` matters:** shiphq generates prompts based on issue/PR content (e.g., "Implement GitHub issue #456: Fix login"). The `prompt_flag` tells shiphq how to pass that prompt to your agent:
-- `--prompt` → `opencode --prompt "generated prompt"`
-- `--message` → `aider --message "generated prompt"`
-- `""` (empty) → `claude "generated prompt"` (positional)
+**Why `prompt_flag` matters:** shiphq writes the full brief to `prompt.md`, then passes a bootstrap prompt that tells the agent to read that file. The `prompt_flag` tells shiphq how to send that bootstrap prompt:
+- `--prompt` → `opencode --prompt "Read ./prompt.md and use it as the full task brief."`
+- `--message` → `aider --message "Read ./prompt.md and use it as the full task brief."`
+- `""` (empty) → `pi "Read ./prompt.md and use it as the full task brief."` (positional)
+
+For custom agents, `prompt_flag` is optional. If you leave it out, shiphq uses positional prompt delivery.
 
 This works for both built-in prompts (from issues/PRs) and custom prompts via `--prompt "custom instructions"`.
 
-**For maintainers:** Adding new built-in agents is easy—just add two fields:
+**For maintainers:** Adding new built-in agents is usually just these fields:
 - `command`: The CLI command to run
 - `prompt_flag`: How to pass the prompt (`--prompt`, `--message`, or `""` for positional)
+
+If a CLI needs fixed arguments before the prompt, you can also set `args`.
 
 See `internal/agent/agent.go` for the built-in registry.
 
@@ -166,8 +188,9 @@ See `internal/agent/agent.go` for the built-in registry.
 2. **Creates branch** from issue → `github-issue-456` (uses number only)
 3. **Creates worktree** via `wt switch --create`
 4. **Starts tmux session** → `blog-github-issue-456` (format: {project}-{source}-{type}-{id})
-5. **Spawns agent** → Your choice of AI agent (opencode, claude, codex, or custom) with the task prompt
-6. **Cleans up** worktree + tmux on `cleanup`
+5. **Writes `prompt.md`** in the worktree with the full task brief
+6. **Spawns agent** → Your choice of AI agent (pi, opencode, claude, codex, or custom) with a bootstrap prompt
+7. **Cleans up** worktree + tmux on `cleanup`
 
 ## Why tmux?
 
@@ -205,9 +228,10 @@ This shares dependencies between worktrees so agents don't reinstall from scratc
 ┌──────────────────────────────────┐
 │ blog-github-issue-456            │
 │ ├─ Worktree: ./github-issue-456  │
-│ ├─ Tmux: 2 windows               │
-│ └─ Agent: claude (or opencode,   │
-│            codex, or custom)      │
+│ ├─ Tmux: agent window            │
+│ └─ Agent: claude (or pi,         │
+│            opencode, codex,      │
+│            or custom)            │
 └──────────────────────────────────┘
 ```
 
@@ -218,7 +242,7 @@ This shares dependencies between worktrees so agents don't reinstall from scratc
 - `create --github <num> -t <type>` - Spawn agent from GitHub issue/PR (type: issue, pr)
 - `create --jira <id>` - Spawn agent from Jira ticket
 - `create --prompt "text"` - Spawn agent from custom prompt
-- `create ... --agent <name>` - Use specific AI agent (opencode, claude, codex, or custom)
+- `create ... --agent <name>` - Use specific AI agent (otherwise shiphq uses config `agents.default.name` or `pi`)
 - `create ... --prompt "custom"` - Override default prompt with custom instructions
 - `list` - Show active sessions for current project
 - `attach <id>` - Attach to tmux session

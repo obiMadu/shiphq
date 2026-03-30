@@ -1,0 +1,25 @@
+# Copy this file to ~/.config/shiphq/config.toml and adjust as needed.
+
+# Default agent selection.
+[agents.default]
+# ShipHQ uses this agent when `--agent` is omitted.
+# For a custom agent, use whatever comes after `agents.` in its definition.
+# Example: [agents.aider] means the agent name is `aider`.
+# Built-in agent names: pi, opencode, claude, codex.
+name = "pi"
+
+# Custom agent definitions.
+# Each [agents.<name>] block defines one custom agent.
+# The <name> is what you pass to `--agent`, and what you can use in [agents.default].name.
+# `prompt_flag` is optional. If you omit it, ShipHQ passes the prompt positionally.
+[agents.aider]
+command = "aider"
+prompt_flag = "--message"
+
+[agents.custom-agent]
+command = "my-agent"
+prompt_flag = ""
+
+[agents.custom-agent-with-args]
+command = "my-agent"
+args = ["run", "--profile", "coding"]

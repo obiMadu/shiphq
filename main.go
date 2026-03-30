@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/obiMadu/shiphq/internal/agent"
 	createinput "github.com/obiMadu/shiphq/internal/cli"
 	promptbuilder "github.com/obiMadu/shiphq/internal/prompt"
 	"github.com/obiMadu/shiphq/internal/repository"
@@ -68,7 +69,7 @@ func init() {
 	createCmd.Flags().StringVar(&promptFlag, "prompt", "", "Raw prompt text")
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
-	createCmd.Flags().StringVar(&agentFlag, "agent", "opencode", "AI agent to spawn (opencode, claude, codex, or custom)")
+	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to config agents.default.name, otherwise pi)")
 
 	cleanupCmd.Flags().StringVar(&idFlag, "id", "", "Session ID to cleanup")
 	cleanupCmd.MarkFlagRequired("id")
@@ -107,8 +108,16 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		workerPrompt = promptbuilder.BuildOverride(workItem, repositoryTarget, createInput.PromptOverride)
 	}
 
+	selectedAgent := strings.TrimSpace(agentFlag)
+	if selectedAgent == "" {
+		selectedAgent, err = agent.DefaultName()
+		if err != nil {
+			return err
+		}
+	}
+
 	localRuntime := runtime.LocalRuntime{}
-	session, err := localRuntime.Create(project, workItem, workerPrompt, agentFlag)
+	session, err := localRuntime.Create(project, workItem, workerPrompt, selectedAgent)
 	if err != nil {
 		return err
 	}
