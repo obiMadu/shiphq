@@ -73,6 +73,7 @@ func init() {
 	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to config agents.default.name)")
 
 	cleanupCmd.Flags().StringVar(&idFlag, "id", "", "Session ID to cleanup")
+	cleanupCmd.Flags().BoolVar(&forceFlag, "force", false, "Force worktree removal with `wt remove --force`")
 	cleanupCmd.MarkFlagRequired("id")
 }
 
@@ -158,7 +159,7 @@ func attachCmdRun(cmd *cobra.Command, args []string) error {
 
 func cleanupCmdRun(cmd *cobra.Command, args []string) error {
 	localRuntime := runtime.LocalRuntime{}
-	return localRuntime.Cleanup(idFlag)
+	return localRuntime.Cleanup(idFlag, forceFlag)
 }
 
 func resolveProjectName(project string) (string, error) {

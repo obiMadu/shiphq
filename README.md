@@ -119,6 +119,7 @@ shiphq create --github 456 -t issue --agent codex
 shiphq list                                    # Show all sessions for current project
 shiphq attach blog-github-issue-456             # Attach directly
 shiphq cleanup --id blog-github-issue-456       # Remove worktree + tmux
+shiphq cleanup --id blog-github-issue-456 --force
 ```
 
 ## Supported AI Agents
@@ -255,7 +256,7 @@ This shares dependencies between worktrees so agents don't reinstall from scratc
 - `create ... --prompt "custom"` - Override default prompt with custom instructions
 - `list` - Show active sessions for current project
 - `attach <id>` - Attach to tmux session
-- `cleanup --id <id>` - Remove worktree and session
+- `cleanup --id <id> [--force]` - Remove worktree and session (`--force` uses `wt remove --force`)
 
 ## License
 
