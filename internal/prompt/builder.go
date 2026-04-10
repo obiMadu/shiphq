@@ -9,23 +9,25 @@ import (
 )
 
 func BuildDefault(workItem workitem.WorkItem, repositoryTarget repository.Target) string {
-	if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
-		return strings.TrimSpace(workItem.Description)
-	}
-
 	workItemContext := workItem.Context()
 
 	switch workItem.Mode {
 	case workitem.ModeReview:
+		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
+			return strings.TrimSpace(workItem.Description)
+		}
 		if workItemContext == "" {
 			return fmt.Sprintf("Review %s.", describeWorkItem(workItem))
 		}
 		return fmt.Sprintf("Review %s.\n\n%s", describeWorkItem(workItem), workItemContext)
 	case workitem.ModeImplement:
-		if workItemContext == "" {
-			return fmt.Sprintf("Implement %s.\n\n%s", describeWorkItem(workItem), deliveryInstruction(repositoryTarget))
+		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
+			return appendImplementationInstructions(strings.TrimSpace(workItem.Description), workItem, repositoryTarget)
 		}
-		return fmt.Sprintf("Implement %s.\n\n%s\n\n%s", describeWorkItem(workItem), workItemContext, deliveryInstruction(repositoryTarget))
+		if workItemContext == "" {
+			return fmt.Sprintf("Implement %s.\n\n%s", describeWorkItem(workItem), deliveryInstruction(workItem, repositoryTarget))
+		}
+		return fmt.Sprintf("Implement %s.\n\n%s\n\n%s", describeWorkItem(workItem), workItemContext, deliveryInstruction(workItem, repositoryTarget))
 	default:
 		return workItemContext
 	}
@@ -35,6 +37,19 @@ func BuildOverride(workItem workitem.WorkItem, repositoryTarget repository.Targe
 	trimmedInstructions := strings.TrimSpace(instructions)
 	if trimmedInstructions == "" {
 		return BuildDefault(workItem, repositoryTarget)
+	}
+
+	if workItem.Mode == workitem.ModeImplement {
+		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
+			return appendImplementationInstructions(trimmedInstructions, workItem, repositoryTarget)
+		}
+
+		workItemContext := workItem.Context()
+		if workItemContext == "" {
+			return appendImplementationInstructions(trimmedInstructions, workItem, repositoryTarget)
+		}
+
+		return appendImplementationInstructions(fmt.Sprintf("%s\n\nContext:\n%s", trimmedInstructions, workItemContext), workItem, repositoryTarget)
 	}
 
 	if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
@@ -66,15 +81,40 @@ func describeWorkItem(workItem workitem.WorkItem) string {
 	}
 }
 
-func deliveryInstruction(repositoryTarget repository.Target) string {
+func appendImplementationInstructions(promptText string, workItem workitem.WorkItem, repositoryTarget repository.Target) string {
+	trimmedPromptText := strings.TrimSpace(promptText)
+	if trimmedPromptText == "" {
+		return deliveryInstruction(workItem, repositoryTarget)
+	}
+
+	return fmt.Sprintf("%s\n\n%s", trimmedPromptText, deliveryInstruction(workItem, repositoryTarget))
+}
+
+func deliveryInstruction(workItem workitem.WorkItem, repositoryTarget repository.Target) string {
+	requestReferenceInstruction := referenceInstruction(workItem, repositoryTarget)
+
 	switch repositoryTarget.Host {
 	case repository.HostGitHub:
-		return "When the implementation is complete, commit your changes, push the branch, open and submit a GitHub PR with gh against the appropriate base branch, and report the PR URL."
+		return fmt.Sprintf("When the implementation is complete, commit your changes, push the branch, open and submit a GitHub PR with gh against the appropriate base branch%s, report the PR URL, and stop there. Do not merge, approve, or enable auto-merge on the PR; it will be reviewed separately.", requestReferenceInstruction)
 	case repository.HostGitLab:
-		return "When the implementation is complete, commit your changes, push the branch, open and submit a GitLab merge request with glab against the appropriate base branch, and report the merge request URL."
+		return fmt.Sprintf("When the implementation is complete, commit your changes, push the branch, open and submit a GitLab merge request with glab against the appropriate base branch%s, report the merge request URL, and stop there. Do not merge, approve, or enable auto-merge on it; it will be reviewed separately.", requestReferenceInstruction)
 	case repository.HostBitbucket:
-		return "When the implementation is complete, commit your changes, push the branch, open and submit a Bitbucket pull request against the appropriate base branch, and report the pull request URL."
+		return fmt.Sprintf("When the implementation is complete, commit your changes, push the branch, open and submit a Bitbucket pull request against the appropriate base branch%s, report the pull request URL, and stop there. Do not merge, approve, or enable auto-merge on it; it will be reviewed separately.", requestReferenceInstruction)
 	default:
-		return "When the implementation is complete, commit your changes, push the branch, open and submit a pull request against the appropriate base branch, and report the PR URL."
+		return fmt.Sprintf("When the implementation is complete, commit your changes, push the branch, open and submit a pull request against the appropriate base branch%s, report the PR URL, and stop there. Do not merge, approve, or enable auto-merge on it; it will be reviewed separately.", requestReferenceInstruction)
+	}
+}
+
+func referenceInstruction(workItem workitem.WorkItem, repositoryTarget repository.Target) string {
+	sourceReference := strings.TrimSpace(workItem.Source.Reference)
+	if sourceReference == "" {
+		return ""
+	}
+
+	switch {
+	case workItem.Source.System == "github" && workItem.Source.Kind == "issue" && repositoryTarget.Host == repository.HostGitHub:
+		return fmt.Sprintf(", make sure the PR body references GitHub issue #%s with a non-closing reference like `Refs #%s` so the issue gets a backlink without being closed", sourceReference, sourceReference)
+	default:
+		return ""
 	}
 }

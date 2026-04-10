@@ -137,6 +137,29 @@ When `--agent` is omitted, shiphq uses `agents.default.name` from `~/.config/shi
 
 All agents spawn in interactive mode (TUI) so you can jump in and collaborate. shiphq writes the full task brief to `.shiphq/prompt.md` in the worktree, ignores `/.shiphq/` via the worktree-local Git exclude, then sends a small bootstrap instruction using the agent's configured prompt delivery style.
 
+### Agent Authentication
+
+shiphq only launches local agent CLIs inside tmux. It intentionally does not act as a secret broker for AI providers and does not provide a shiphq-level interface for passing provider environment variables through to agents. Install each agent separately, configure its auth separately, and make sure it already works from a normal shell before you use it with shiphq.
+
+- `opencode`, `claude`, and `codex` should be authenticated with their own native login or config flow before shiphq launches them.
+- `pi` should be configured in `~/.pi/agent/models.json`. Pi supports literal keys, environment variable names, and `!` shell commands for resolving provider credentials.
+- The `!` shell-command form is useful with secret managers like 1Password or Infisical because Pi can fetch the key itself at request time instead of relying on shiphq to inject provider env vars.
+
+Example `pi` config:
+
+```json
+{
+  "providers": {
+    "openai": {
+      "apiKey": "!infisical secrets get OPENAI_API_KEY --projectId=... --env=prod --plain --silent"
+    },
+    "anthropic": {
+      "apiKey": "!op read 'op://vault/anthropic/credential'"
+    }
+  }
+}
+```
+
 ### Adding Custom Agents
 
 You can edit the generated config or create it ahead of time yourself. The shipped template is `config.example.toml`, and shiphq copies it to `~/.config/shiphq/config.toml` on first run when that file is missing:
