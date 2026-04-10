@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/obiMadu/shiphq/internal/agent"
@@ -45,7 +46,15 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 		return Session{}, err
 	}
 
-	worktreeSwitchCommand := buildWorktreeSwitchCommand(worktreeSwitchTarget, shouldCreateWorktree)
+	worktreeBaseBranch := ""
+	if shouldCreateWorktree {
+		worktreeBaseBranch, err = refreshDefaultBranch()
+		if err != nil {
+			return Session{}, fmt.Errorf("failed to resolve default branch: %w", err)
+		}
+	}
+
+	worktreeSwitchCommand := buildWorktreeSwitchCommand(worktreeSwitchTarget, shouldCreateWorktree, worktreeBaseBranch)
 	if output, err := worktreeSwitchCommand.CombinedOutput(); err != nil {
 		return Session{}, fmt.Errorf("wt switch failed: %w\n%s", err, output)
 	}
@@ -98,24 +107,80 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 }
 
 func (localRuntime LocalRuntime) List(project string) ([]Session, error) {
-	listCommand := exec.Command("tmux", "list-sessions", "-F", "#S")
-	output, err := listCommand.CombinedOutput()
+	runningSessionIDs, err := listTmuxSessionIDs()
 	if err != nil {
-		return nil, fmt.Errorf("tmux list failed: %w\n%s", err, output)
+		return nil, err
 	}
 
-	var sessions []Session
-	for _, line := range strings.Split(string(output), "\n") {
-		sessionID := strings.TrimSpace(line)
-		if sessionID == "" {
-			continue
-		}
+	sessions := make([]Session, 0, len(runningSessionIDs))
+	for sessionID := range runningSessionIDs {
 		if strings.HasPrefix(sessionID, project+"-") {
 			sessions = append(sessions, Session{ID: sessionID, Status: "running"})
 		}
 	}
 
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].ID < sessions[j].ID
+	})
+
 	return sessions, nil
+}
+
+func (localRuntime LocalRuntime) ListAll() ([]Session, error) {
+	metadataItems, err := session.List()
+	if err != nil {
+		return nil, err
+	}
+
+	runningSessionIDs, err := listTmuxSessionIDs()
+	if err != nil {
+		return nil, err
+	}
+
+	sessions := make([]Session, 0, len(metadataItems))
+	for _, metadata := range metadataItems {
+		status := "stopped"
+		if _, ok := runningSessionIDs[metadata.SessionID]; ok {
+			status = "running"
+		}
+
+		sessions = append(sessions, Session{ID: metadata.SessionID, Status: status})
+	}
+
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].ID < sessions[j].ID
+	})
+
+	return sessions, nil
+}
+
+func listTmuxSessionIDs() (map[string]struct{}, error) {
+	listCommand := exec.Command("tmux", "list-sessions", "-F", "#S")
+	output, err := listCommand.CombinedOutput()
+	if err != nil {
+		if isNoTmuxServer(output) {
+			return map[string]struct{}{}, nil
+		}
+
+		return nil, fmt.Errorf("tmux list failed: %w\n%s", err, output)
+	}
+
+	sessionIDs := make(map[string]struct{})
+	for _, line := range strings.Split(string(output), "\n") {
+		sessionID := strings.TrimSpace(line)
+		if sessionID == "" {
+			continue
+		}
+
+		sessionIDs[sessionID] = struct{}{}
+	}
+
+	return sessionIDs, nil
+}
+
+func isNoTmuxServer(output []byte) bool {
+	lowerOutput := strings.ToLower(string(output))
+	return strings.Contains(lowerOutput, "no server running") || strings.Contains(lowerOutput, "failed to connect to server")
 }
 
 func writeWorkerPromptFile(worktreePath, prompt string) error {
@@ -291,10 +356,30 @@ func resolveWorktreeSwitch(workItem workitem.WorkItem, defaultBranch string) (st
 	return defaultBranch, defaultBranch, true, nil
 }
 
-func buildWorktreeSwitchCommand(target string, shouldCreate bool) *exec.Cmd {
+func refreshDefaultBranch() (string, error) {
+	clearCommand := exec.Command("wt", "config", "state", "default-branch", "clear")
+	if output, err := clearCommand.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("wt config state default-branch clear failed: %w\n%s", err, output)
+	}
+
+	defaultBranchCommand := exec.Command("wt", "config", "state", "default-branch")
+	output, err := defaultBranchCommand.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("wt config state default-branch failed: %w\n%s", err, output)
+	}
+
+	defaultBranch := strings.TrimSpace(string(output))
+	if defaultBranch == "" {
+		return "", fmt.Errorf("wt default branch cannot be empty")
+	}
+
+	return defaultBranch, nil
+}
+
+func buildWorktreeSwitchCommand(target string, shouldCreate bool, baseBranch string) *exec.Cmd {
 	args := []string{"switch"}
 	if shouldCreate {
-		args = append(args, "--create")
+		args = append(args, "--create", "--base", baseBranch)
 	}
 	args = append(args, target)
 	return exec.Command("wt", args...)

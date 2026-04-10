@@ -130,6 +130,7 @@ shiphq create --github 456 -t issue --agent claude
 
 ```bash
 shiphq list
+shiphq list --all
 shiphq attach project-github-issue-456
 shiphq cleanup --id project-github-issue-456
 shiphq cleanup --id project-github-issue-456 --force
@@ -141,6 +142,7 @@ shiphq cleanup --id project-github-issue-456 --force
 - Jira does not use `-t`
 - `--prompt` by itself means a custom prompt task
 - `--prompt` with `--github` or `--jira` means "keep the source context and add these instructions"
+- `list` shows running sessions for the current detected project; use `list --all` to see ShipHQ sessions across projects
 - `cleanup --force` uses `wt remove --force` for the worktree
 
 ## Human vs orchestrator responsibilities

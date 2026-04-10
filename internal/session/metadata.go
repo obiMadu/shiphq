@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/obiMadu/shiphq/internal/config"
 	"github.com/obiMadu/shiphq/internal/workitem"
@@ -61,6 +63,42 @@ func Load(sessionID string) (Metadata, error) {
 	}
 
 	return metadata, nil
+}
+
+func List() ([]Metadata, error) {
+	if err := config.EnsureSessionStateDir(); err != nil {
+		return nil, fmt.Errorf("failed to prepare session state directory: %w", err)
+	}
+
+	entries, err := os.ReadDir(config.GetSessionStateDir())
+	if err != nil {
+		return nil, fmt.Errorf("failed to read session metadata directory: %w", err)
+	}
+
+	metadataItems := make([]Metadata, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		sessionID := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		if sessionID == "" {
+			continue
+		}
+
+		metadata, err := Load(sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load session metadata for %s: %w", sessionID, err)
+		}
+
+		metadataItems = append(metadataItems, metadata)
+	}
+
+	sort.Slice(metadataItems, func(i, j int) bool {
+		return metadataItems[i].SessionID < metadataItems[j].SessionID
+	})
+
+	return metadataItems, nil
 }
 
 func Delete(sessionID string) error {

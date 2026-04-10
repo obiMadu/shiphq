@@ -27,6 +27,7 @@ var (
 	typeFlag    string
 	idFlag      string
 	agentFlag   string
+	allFlag     bool
 	forceFlag   bool
 )
 
@@ -45,7 +46,7 @@ var createCmd = &cobra.Command{
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List active agent sessions",
+	Short: "List agent sessions",
 	RunE:  listCmdRun,
 }
 
@@ -71,6 +72,7 @@ func init() {
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
 	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to config agents.default.name)")
+	listCmd.Flags().BoolVar(&allFlag, "all", false, "List sessions across all projects")
 
 	cleanupCmd.Flags().StringVar(&idFlag, "id", "", "Session ID to cleanup")
 	cleanupCmd.Flags().BoolVar(&forceFlag, "force", false, "Force worktree removal with `wt remove --force`")
@@ -135,13 +137,22 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 }
 
 func listCmdRun(cmd *cobra.Command, args []string) error {
-	project, err := resolveProjectName("")
-	if err != nil {
-		return err
-	}
-
 	localRuntime := runtime.LocalRuntime{}
-	sessions, err := localRuntime.List(project)
+	var (
+		sessions []runtime.Session
+		err      error
+	)
+
+	if allFlag {
+		sessions, err = localRuntime.ListAll()
+	} else {
+		project, err := resolveProjectName("")
+		if err != nil {
+			return err
+		}
+
+		sessions, err = localRuntime.List(project)
+	}
 	if err != nil {
 		return err
 	}
