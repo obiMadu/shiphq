@@ -48,7 +48,7 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 
 	worktreeBaseBranch := ""
 	if shouldCreateWorktree {
-		worktreeBaseBranch, err = refreshDefaultBranch()
+		worktreeBaseBranch, err = resolveDefaultBranch()
 		if err != nil {
 			return Session{}, fmt.Errorf("failed to resolve default branch: %w", err)
 		}
@@ -356,12 +356,7 @@ func resolveWorktreeSwitch(workItem workitem.WorkItem, defaultBranch string) (st
 	return defaultBranch, defaultBranch, true, nil
 }
 
-func refreshDefaultBranch() (string, error) {
-	clearCommand := exec.Command("wt", "config", "state", "default-branch", "clear")
-	if output, err := clearCommand.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("wt config state default-branch clear failed: %w\n%s", err, output)
-	}
-
+func resolveDefaultBranch() (string, error) {
 	defaultBranchCommand := exec.Command("wt", "config", "state", "default-branch")
 	output, err := defaultBranchCommand.CombinedOutput()
 	if err != nil {
