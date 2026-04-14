@@ -52,6 +52,10 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 		if err != nil {
 			return Session{}, fmt.Errorf("failed to resolve default branch: %w", err)
 		}
+
+		if err := pullLatestBranchChanges(worktreeBaseBranch); err != nil {
+			return Session{}, fmt.Errorf("failed to update default branch %s: %w", worktreeBaseBranch, err)
+		}
 	}
 
 	worktreeSwitchCommand := buildWorktreeSwitchCommand(worktreeSwitchTarget, shouldCreateWorktree, worktreeBaseBranch)
@@ -369,6 +373,22 @@ func resolveDefaultBranch() (string, error) {
 	}
 
 	return defaultBranch, nil
+}
+
+func pullLatestBranchChanges(branch string) error {
+	branchWorktreePath, err := findWorktreePath(branch)
+	if err != nil {
+		return fmt.Errorf("failed to find worktree for branch %s: %w", branch, err)
+	}
+
+	pullCommand := exec.Command("git", "pull", "--ff-only")
+	pullCommand.Dir = branchWorktreePath
+	output, err := pullCommand.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git pull --ff-only failed: %w\n%s", err, output)
+	}
+
+	return nil
 }
 
 func buildWorktreeSwitchCommand(target string, shouldCreate bool, baseBranch string) *exec.Cmd {
