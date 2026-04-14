@@ -14,12 +14,12 @@ func BuildDefault(workItem workitem.WorkItem, repositoryTarget repository.Target
 	switch workItem.Mode {
 	case workitem.ModeReview:
 		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
-			return strings.TrimSpace(workItem.Description)
+			return appendReviewInstructions(strings.TrimSpace(workItem.Description))
 		}
 		if workItemContext == "" {
-			return fmt.Sprintf("Review %s.", describeWorkItem(workItem))
+			return fmt.Sprintf("Review %s.\n\n%s", describeWorkItem(workItem), reviewInstruction())
 		}
-		return fmt.Sprintf("Review %s.\n\n%s", describeWorkItem(workItem), workItemContext)
+		return fmt.Sprintf("Review %s.\n\n%s\n\n%s", describeWorkItem(workItem), workItemContext, reviewInstruction())
 	case workitem.ModeImplement:
 		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
 			return appendImplementationInstructions(strings.TrimSpace(workItem.Description), workItem, repositoryTarget)
@@ -50,6 +50,19 @@ func BuildOverride(workItem workitem.WorkItem, repositoryTarget repository.Targe
 		}
 
 		return appendImplementationInstructions(fmt.Sprintf("%s\n\nContext:\n%s", trimmedInstructions, workItemContext), workItem, repositoryTarget)
+	}
+
+	if workItem.Mode == workitem.ModeReview {
+		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
+			return appendReviewInstructions(trimmedInstructions)
+		}
+
+		workItemContext := workItem.Context()
+		if workItemContext == "" {
+			return appendReviewInstructions(trimmedInstructions)
+		}
+
+		return appendReviewInstructions(fmt.Sprintf("%s\n\nContext:\n%s", trimmedInstructions, workItemContext))
 	}
 
 	if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
@@ -90,6 +103,15 @@ func appendImplementationInstructions(promptText string, workItem workitem.WorkI
 	return fmt.Sprintf("%s\n\n%s", trimmedPromptText, deliveryInstruction(workItem, repositoryTarget))
 }
 
+func appendReviewInstructions(promptText string) string {
+	trimmedPromptText := strings.TrimSpace(promptText)
+	if trimmedPromptText == "" {
+		return reviewInstruction()
+	}
+
+	return fmt.Sprintf("%s\n\n%s", trimmedPromptText, reviewInstruction())
+}
+
 func deliveryInstruction(workItem workitem.WorkItem, repositoryTarget repository.Target) string {
 	requestReferenceInstruction := referenceInstruction(workItem, repositoryTarget)
 
@@ -117,4 +139,8 @@ func referenceInstruction(workItem workitem.WorkItem, repositoryTarget repositor
 	default:
 		return ""
 	}
+}
+
+func reviewInstruction() string {
+	return "This is a review-only task. Inspect the PR and report your findings back here. Do not edit any files, implement fixes, commit, push, approve, merge, or otherwise modify the PR or branch. If you identify a fix, describe it without making changes."
 }

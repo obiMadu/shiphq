@@ -72,7 +72,13 @@ For **task descriptions** such as GitHub issues, shiphq's default prompt is end-
 - open and submit a GitHub PR with `gh`
 - report the PR URL back
 
-For **GitHub PRs**, the default worker behavior is review-oriented.
+For **GitHub PRs**, the default worker behavior is review-only:
+
+- inspect the diff and relevant context
+- report findings back
+- do not edit files
+- do not implement fixes
+- do not commit, push, approve, merge, or otherwise modify the PR
 
 For **task descriptions** from Jira tickets, the intended default is the same end-to-end implementation-to-PR workflow, but the current Jira adapter is still not implemented.
 
