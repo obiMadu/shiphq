@@ -150,6 +150,7 @@ shiphq cleanup --id project-github-issue-456 --force
 - `--prompt` with `--github` or `--jira` means "keep the source context and add these instructions"
 - `list` shows running sessions for the current detected project; use `list --all` to see ShipHQ sessions across projects
 - `cleanup --force` uses `wt remove --force` for the worktree
+- **Do not use `--prompt` with `--github` or `--jira` unless the user explicitly asks for custom instructions.** The built-in prompts for issues and PRs already contain the complete PR workflow (implement, commit, push, open PR, report URL). Adding a custom prompt usually strips out these steps because agents rarely include the full delivery workflow in their override text. Only add `--prompt` when the user specifically requests extra instructions like "Start by writing tests" or "Use this specific approach."
 
 ## Human vs orchestrator responsibilities
 
