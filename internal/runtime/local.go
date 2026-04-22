@@ -36,6 +36,13 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 	}
 
 	workerID := fmt.Sprintf("%s-%s", project, sessionLabel)
+	existingWorker, err := session.Exists(workerID)
+	if err != nil {
+		return Session{}, err
+	}
+	if existingWorker {
+		return Session{}, fmt.Errorf("worker %s already exists; attach to it or clean it up before creating another", workerID)
+	}
 
 	configuredAgent, err := agent.Get(agentName)
 	if err != nil {
@@ -223,12 +230,11 @@ func writeWorkerPromptFile(worktreePath, prompt string) error {
 }
 
 func ignoreWorktreePattern(worktreePath, pattern string) error {
-	gitDir, err := findGitDir(worktreePath)
+	excludePath, err := findGitPath(worktreePath, "info/exclude")
 	if err != nil {
 		return err
 	}
 
-	excludePath := filepath.Join(gitDir, "info", "exclude")
 	if err := os.MkdirAll(filepath.Dir(excludePath), 0755); err != nil {
 		return fmt.Errorf("failed to prepare exclude file directory: %w", err)
 	}
@@ -257,24 +263,20 @@ func ignoreWorktreePattern(worktreePath, pattern string) error {
 	return nil
 }
 
-func findGitDir(worktreePath string) (string, error) {
-	gitDirCommand := exec.Command("git", "rev-parse", "--git-dir")
-	gitDirCommand.Dir = worktreePath
-	output, err := gitDirCommand.CombinedOutput()
+func findGitPath(worktreePath, gitPath string) (string, error) {
+	gitPathCommand := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-path", gitPath)
+	gitPathCommand.Dir = worktreePath
+	output, err := gitPathCommand.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git rev-parse --git-dir failed: %w\n%s", err, output)
+		return "", fmt.Errorf("git rev-parse --git-path %s failed: %w\n%s", gitPath, err, output)
 	}
 
-	gitDir := strings.TrimSpace(string(output))
-	if gitDir == "" {
-		return "", fmt.Errorf("git directory cannot be empty")
+	resolvedPath := strings.TrimSpace(string(output))
+	if resolvedPath == "" {
+		return "", fmt.Errorf("git path %s cannot be empty", gitPath)
 	}
 
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(worktreePath, gitDir)
-	}
-
-	return filepath.Clean(gitDir), nil
+	return filepath.Clean(resolvedPath), nil
 }
 
 func buildBootstrapPrompt(fileName string) string {
@@ -448,20 +450,21 @@ func (localRuntime LocalRuntime) Cleanup(sessionID string, force bool) error {
 		return err
 	}
 
+	if err := ensureCleanupPreflight(sessionID, metadata, force); err != nil {
+		return err
+	}
+
+	worktreeTarget, err := resolveCleanupWorktreeTarget(metadata)
+	if err != nil {
+		return err
+	}
+
 	var cleanupErrors []string
 
 	if err := killTmuxPlacement(metadata); err != nil {
 		cleanupErrors = append(cleanupErrors, err.Error())
 	}
-
-	worktreeTarget := metadata.WorktreePath
-	if worktreeTarget == "" {
-		worktreeTarget = metadata.Branch
-	}
-
-	if strings.TrimSpace(worktreeTarget) == "" {
-		cleanupErrors = append(cleanupErrors, "session metadata is missing both worktree path and branch")
-	} else if err := cleanupWorktree(worktreeTarget, force); err != nil {
+	if err := cleanupWorktree(worktreeTarget, force); err != nil {
 		cleanupErrors = append(cleanupErrors, err.Error())
 	}
 
@@ -477,6 +480,64 @@ func (localRuntime LocalRuntime) Cleanup(sessionID string, force bool) error {
 	}
 
 	return nil
+}
+
+func ensureCleanupPreflight(sessionID string, metadata session.Metadata, force bool) error {
+	if force {
+		return nil
+	}
+
+	worktreePath := strings.TrimSpace(metadata.WorktreePath)
+	if worktreePath == "" {
+		return nil
+	}
+
+	worktreeInfo, err := os.Stat(worktreePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to inspect worktree path %s: %w", worktreePath, err)
+	}
+	if !worktreeInfo.IsDir() {
+		return fmt.Errorf("worktree path %s is not a directory", worktreePath)
+	}
+
+	dirtyWorktree, err := worktreeHasUncommittedChanges(worktreePath)
+	if err != nil {
+		return err
+	}
+	if dirtyWorktree {
+		return fmt.Errorf("cleanup aborted: worker %s has uncommitted changes\nworker remains running and tracked; commit or stash changes first, or rerun with `shiphq cleanup --id %s --force`", sessionID, sessionID)
+	}
+
+	return nil
+}
+
+func resolveCleanupWorktreeTarget(metadata session.Metadata) (string, error) {
+	worktreeTarget := strings.TrimSpace(metadata.WorktreePath)
+	if worktreeTarget != "" {
+		return worktreeTarget, nil
+	}
+
+	worktreeTarget = strings.TrimSpace(metadata.Branch)
+	if worktreeTarget != "" {
+		return worktreeTarget, nil
+	}
+
+	return "", fmt.Errorf("session metadata is missing both worktree path and branch")
+}
+
+func worktreeHasUncommittedChanges(worktreePath string) (bool, error) {
+	statusCommand := exec.Command("git", "status", "--short")
+	statusCommand.Dir = worktreePath
+	output, err := statusCommand.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("git status --short failed in %s: %w\n%s", worktreePath, err, output)
+	}
+
+	return strings.TrimSpace(string(output)) != "", nil
 }
 
 func (localRuntime LocalRuntime) Promote(sessionID string) (Session, error) {

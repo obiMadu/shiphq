@@ -150,6 +150,26 @@ func Delete(sessionID string) error {
 	return nil
 }
 
+func Exists(sessionID string) (bool, error) {
+	if sessionID == "" {
+		return false, fmt.Errorf("session ID cannot be empty")
+	}
+
+	if err := config.EnsureSessionStateDir(); err != nil {
+		return false, fmt.Errorf("failed to prepare session state directory: %w", err)
+	}
+
+	_, err := os.Stat(metadataPath(sessionID))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("failed to inspect session metadata for %s: %w", sessionID, err)
+}
+
 func metadataPath(sessionID string) string {
 	return filepath.Join(config.GetSessionStateDir(), sessionID+".json")
 }
