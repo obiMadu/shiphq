@@ -191,4 +191,4 @@ When relevant, emphasize these points:
 - humans can jump in at any point
 - WorkTrunk hooks can reuse ignored files and caches to reduce cold starts
 
-If the user is comparing shiphq to more headless agent runners, highlight that shiphq is optimized for turning local task descriptions into PRs with normal terminal workflows, while still supporting PR review in the same environment.
+

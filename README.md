@@ -225,15 +225,13 @@ For custom agents, `prompt_flag` is optional. If you leave it out, shiphq uses p
 
 This works for both built-in prompts (from issues/PRs) and custom prompts via `--prompt "custom instructions"`.
 
-**For maintainers:** shipped agent defaults now live in `config.example.toml`, which shiphq copies to `~/.config/shiphq/config.toml` on first run.
-
 ## What shiphq Does
 
 1. **Fetches issue/PR/ticket** via GitHub/Jira CLI → extracts title + description
 2. **Resolves the worker branch target** → for example `github-issue-456` for issue work, or a provider-specific review branch for PR work
 3. **Creates or switches the worktree** via `wt switch`
 4. **Starts tmux worker** → a dedicated session or a parent-session window, depending on work mode and launch flags
-5. **Writes `.shiphq/prompt.md`** in the worktree with the full task brief and ignores `/.shiphq/` locally
+5. **Writes `.shiphq/prompt.md`** in the worktree with the full task brief
 6. **Spawns agent** → Your choice of AI agent (pi, opencode, claude, codex, or custom) with a bootstrap prompt
 7. **Promotes** a lightweight window worker into a dedicated session on `promote`
 8. **Cleans up** worktree + tmux target on `cleanup`
@@ -247,18 +245,6 @@ Each agent worker runs in **tmux** (not headless) so you can:
 - **Multiple panes** - agent in one, logs in another, tests in a third
 
 Review workers can stay lightweight as a single parent-session window by default, then be promoted into a dedicated session when they need to grow.
-
-## WorkTrunk Optimizations
-
-Configure [WorkTrunk hooks](https://worktrunk.dev/hook/) in `~/.config/worktrunk/config.toml`:
-
-```toml
-[post-start]
-# Copy gitignored files (node_modules/, .env, build caches) to skip cold starts
-copy = "wt step copy-ignored"
-```
-
-This shares dependencies between worktrees so agents don't reinstall from scratch.
 
 ## Architecture
 
