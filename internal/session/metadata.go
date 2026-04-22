@@ -12,12 +12,49 @@ import (
 	"github.com/obiMadu/shiphq/internal/workitem"
 )
 
+type PlacementKind string
+
+const (
+	PlacementKindSession PlacementKind = "session"
+	PlacementKindWindow  PlacementKind = "window"
+)
+
 type Metadata struct {
 	SessionID    string            `json:"session_id"`
 	Project      string            `json:"project"`
 	Branch       string            `json:"branch"`
 	WorktreePath string            `json:"worktree_path"`
 	WorkItem     workitem.WorkItem `json:"work_item"`
+
+	PlacementKind   PlacementKind `json:"placement_kind,omitempty"`
+	TmuxSessionID   string        `json:"tmux_session_id,omitempty"`
+	TmuxSessionName string        `json:"tmux_session_name,omitempty"`
+	TmuxWindowID    string        `json:"tmux_window_id,omitempty"`
+	TmuxWindowName  string        `json:"tmux_window_name,omitempty"`
+}
+
+func (metadata Metadata) EffectivePlacementKind() PlacementKind {
+	if metadata.PlacementKind == PlacementKindWindow {
+		return PlacementKindWindow
+	}
+
+	return PlacementKindSession
+}
+
+func (metadata Metadata) EffectiveTmuxSessionTarget() string {
+	if trimmedSessionID := strings.TrimSpace(metadata.TmuxSessionID); trimmedSessionID != "" {
+		return trimmedSessionID
+	}
+
+	if trimmedSessionName := strings.TrimSpace(metadata.TmuxSessionName); trimmedSessionName != "" {
+		return trimmedSessionName
+	}
+
+	return strings.TrimSpace(metadata.SessionID)
+}
+
+func (metadata Metadata) EffectiveTmuxWindowTarget() string {
+	return strings.TrimSpace(metadata.TmuxWindowID)
 }
 
 func Save(metadata Metadata) error {

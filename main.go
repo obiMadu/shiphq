@@ -13,6 +13,7 @@ import (
 	promptbuilder "github.com/obiMadu/shiphq/internal/prompt"
 	"github.com/obiMadu/shiphq/internal/repository"
 	"github.com/obiMadu/shiphq/internal/runtime"
+	"github.com/obiMadu/shiphq/internal/session"
 	"github.com/obiMadu/shiphq/internal/source"
 	_ "github.com/obiMadu/shiphq/internal/source/providers"
 	"github.com/obiMadu/shiphq/internal/workitem"
@@ -20,63 +21,79 @@ import (
 )
 
 var (
-	githubFlag  int
-	jiraFlag    string
-	promptFlag  string
-	projectFlag string
-	typeFlag    string
-	idFlag      string
-	agentFlag   string
-	allFlag     bool
-	forceFlag   bool
+	githubFlag        int
+	jiraFlag          string
+	promptFlag        string
+	projectFlag       string
+	typeFlag          string
+	launchFlag        string
+	agentFlag         string
+	cleanupIDFlag     string
+	promoteIDFlag     string
+	sessionLaunchFlag bool
+	windowLaunchFlag  bool
+	allFlag           bool
+	forceFlag         bool
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "shiphq",
 	Short: "Local orchestrator for task descriptions and PR reviews",
-	Long: `shiphq creates isolated local worktrees and tmux-backed agent sessions 
+	Long: `shiphq creates isolated local worktrees and tmux-backed agent workers 
 from task descriptions (GitHub issues, Jira tickets, custom prompts) and for PR reviews.`,
 }
 
 var createCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a new worker session from a task description or PR review target",
+	Short: "Create a new worker from a task description or PR review target",
 	RunE:  createCmdRun,
 }
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List agent sessions",
+	Short: "List agent workers",
 	RunE:  listCmdRun,
 }
 
 var attachCmd = &cobra.Command{
-	Use:   "attach [session-id]",
-	Short: "Attach to an agent session",
+	Use:   "attach [worker-id]",
+	Short: "Attach to an agent worker",
 	Args:  cobra.ExactArgs(1),
 	RunE:  attachCmdRun,
 }
 
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
-	Short: "Remove worktree and cleanup session",
+	Short: "Remove worktree and cleanup worker",
 	RunE:  cleanupCmdRun,
 }
 
+var promoteCmd = &cobra.Command{
+	Use:   "promote",
+	Short: "Promote a window worker into a dedicated session",
+	RunE:  promoteCmdRun,
+}
+
 func init() {
-	rootCmd.AddCommand(createCmd, listCmd, attachCmd, cleanupCmd)
+	rootCmd.AddCommand(createCmd, listCmd, attachCmd, cleanupCmd, promoteCmd)
 
 	createCmd.Flags().IntVar(&githubFlag, "github", 0, "GitHub issue/PR number")
 	createCmd.Flags().StringVar(&jiraFlag, "jira", "", "Jira ticket ID (e.g., PROJ-123)")
 	createCmd.Flags().StringVar(&promptFlag, "prompt", "", "Raw prompt text")
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
+	createCmd.Flags().StringVar(&launchFlag, "launch", "", "Launch worker in `session` or `window` mode")
 	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to config agents.default.name)")
-	listCmd.Flags().BoolVar(&allFlag, "all", false, "List sessions across all projects")
+	createCmd.Flags().BoolVarP(&sessionLaunchFlag, "session", "s", false, "Launch worker in a dedicated tmux session")
+	createCmd.Flags().BoolVarP(&windowLaunchFlag, "window", "w", false, "Launch worker in the current tmux session as a window")
+	listCmd.Flags().BoolVar(&allFlag, "all", false, "List workers across all projects")
 
-	cleanupCmd.Flags().StringVar(&idFlag, "id", "", "Session ID to cleanup")
+	cleanupCmd.Flags().StringVar(&cleanupIDFlag, "id", "", "Worker ID to cleanup")
 	cleanupCmd.Flags().BoolVar(&forceFlag, "force", false, "Force worktree removal with `wt remove --force`")
 	cleanupCmd.MarkFlagRequired("id")
+
+	promoteCmd.Flags().StringVar(&promoteIDFlag, "id", "", "Window worker ID to promote into a dedicated session")
+	promoteCmd.MarkFlagRequired("id")
 }
 
 func main() {
@@ -117,6 +134,11 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		workerPrompt = promptbuilder.BuildOverride(workItem, repositoryTarget, createInput.PromptOverride)
 	}
 
+	placementKind, err := resolveLaunchPlacement(workItem)
+	if err != nil {
+		return err
+	}
+
 	selectedAgent := strings.TrimSpace(agentFlag)
 	if selectedAgent == "" {
 		selectedAgent, err = agent.DefaultName()
@@ -126,13 +148,13 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 	}
 
 	localRuntime := runtime.LocalRuntime{}
-	session, err := localRuntime.Create(project, workItem, workerPrompt, selectedAgent)
+	workerSession, err := localRuntime.Create(project, workItem, workerPrompt, selectedAgent, placementKind)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("✓ Created session: %s\n", session.ID)
-	fmt.Printf("  Attach: shiphq attach %s\n", session.ID)
+	fmt.Printf("✓ Created worker: %s (%s)\n", workerSession.ID, workerSession.Placement)
+	fmt.Printf("  Attach: shiphq attach %s\n", workerSession.ID)
 	return nil
 }
 
@@ -158,7 +180,7 @@ func listCmdRun(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, s := range sessions {
-		fmt.Printf("%s - %s\n", s.ID, s.Status)
+		fmt.Printf("%s - %s (%s)\n", s.ID, s.Status, s.Placement)
 	}
 	return nil
 }
@@ -170,7 +192,19 @@ func attachCmdRun(cmd *cobra.Command, args []string) error {
 
 func cleanupCmdRun(cmd *cobra.Command, args []string) error {
 	localRuntime := runtime.LocalRuntime{}
-	return localRuntime.Cleanup(idFlag, forceFlag)
+	return localRuntime.Cleanup(cleanupIDFlag, forceFlag)
+}
+
+func promoteCmdRun(cmd *cobra.Command, args []string) error {
+	localRuntime := runtime.LocalRuntime{}
+	workerSession, err := localRuntime.Promote(promoteIDFlag)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Promoted worker: %s (%s)\n", workerSession.ID, workerSession.Placement)
+	fmt.Printf("  Attach: shiphq attach %s\n", workerSession.ID)
+	return nil
 }
 
 func resolveProjectName(project string) (string, error) {
@@ -226,4 +260,45 @@ func detectProjectFromGit() string {
 	}
 
 	return filepath.Base(commonDir)
+}
+
+func resolveLaunchPlacement(workItem workitem.WorkItem) (session.PlacementKind, error) {
+	trimmedLaunch := strings.ToLower(strings.TrimSpace(launchFlag))
+
+	if sessionLaunchFlag && windowLaunchFlag {
+		return "", fmt.Errorf("-s and -w are mutually exclusive")
+	}
+
+	if trimmedLaunch != "" && trimmedLaunch != string(session.PlacementKindSession) && trimmedLaunch != string(session.PlacementKindWindow) {
+		return "", fmt.Errorf("unknown launch mode %q (use 'session' or 'window')", trimmedLaunch)
+	}
+
+	if sessionLaunchFlag {
+		if trimmedLaunch != "" && trimmedLaunch != string(session.PlacementKindSession) {
+			return "", fmt.Errorf("-s conflicts with --launch %s", trimmedLaunch)
+		}
+
+		return session.PlacementKindSession, nil
+	}
+
+	if windowLaunchFlag {
+		if trimmedLaunch != "" && trimmedLaunch != string(session.PlacementKindWindow) {
+			return "", fmt.Errorf("-w conflicts with --launch %s", trimmedLaunch)
+		}
+
+		return session.PlacementKindWindow, nil
+	}
+
+	switch trimmedLaunch {
+	case string(session.PlacementKindSession):
+		return session.PlacementKindSession, nil
+	case string(session.PlacementKindWindow):
+		return session.PlacementKindWindow, nil
+	}
+
+	if workItem.Mode == workitem.ModeReview {
+		return session.PlacementKindWindow, nil
+	}
+
+	return session.PlacementKindSession, nil
 }

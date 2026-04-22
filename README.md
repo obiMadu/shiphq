@@ -1,10 +1,10 @@
 # shiphq
 
-**Local agent orchestration** that enables you and your **orchestrator AI agent** to spawn parallel worker agents from GitHub issues, PRs, Jira tickets, or custom prompts—each running in isolated Git worktrees + tmux sessions.
+**Local agent orchestration** that enables you and your **orchestrator AI agent** to spawn parallel worker agents from GitHub issues, PRs, Jira tickets, or custom prompts—each running in isolated Git worktrees + tmux workers (dedicated sessions or parent-session windows).
 
 Chat naturally with your orchestrator about what needs to be done. It uses the built-in [orchestrator skill](./skill/SKILL.md) to understand your intent and automatically dispatches specialized agents in parallel. You stay in control while the orchestrator handles the logistics.
 
-Need to jump in? Use tmux session switchers to fuzzy-find and instantly attach to any running agent. Each session is a persistent workspace you can peek into, override, or collaborate with anytime.
+Need to jump in? Use tmux session or window switchers to fuzzy-find and instantly attach to any running worker. Dedicated session workers give you a full expandable workspace, while lightweight review workers can stay as a single window in the parent tmux session until you promote them.
 
 > **Note:** Currently supports **local workflow only** (WorkTrunk + tmux + local agent CLIs such as pi, opencode, claude, or codex). Cloud sandbox support (Daytona, etc.) is planned for future releases.
 
@@ -18,14 +18,14 @@ You (in orchestrator session)
 ├─ "Fix login bug #456"     →  Orchestrator uses shiphq skill
 │                               └─ shiphq create --github 456 -t issue
 │                                  ├─ Creates: github-issue-456 worktree
-│                                  ├─ Starts: tmux session blog-github-issue-456
+│                                  ├─ Starts: dedicated tmux session blog-github-issue-456
 │                                  └─ Spawns: default agent with issue context
 │
 └─ "Review PR #234"         →  Orchestrator spawns another agent
-                                  └─ shiphq create --github 234 -t pr
-                                     └─ Parallel agent session
+                                   └─ shiphq create --github 234 -t pr
+                                      └─ New worker window in the current tmux session
 
-Result: Multiple isolated worktrees + tmux sessions + running agents
+Result: Multiple isolated worktrees + tmux workers + running agents
 ```
 
 ## Workflow
@@ -56,11 +56,11 @@ Result: Multiple isolated worktrees + tmux sessions + running agents
    
    The orchestrator understands your intent and runs the right commands.
 
-4. **Switch sessions** - Jump into any agent's workspace 
+4. **Switch workers** - Jump into any worker's workspace 
    
    **Recommended:** Use [tmux-sessionx](https://github.com/omerxx/tmux-sessionx) to fuzzy-find and switch:
    ```bash
-   # Press prefix + f, fuzzy find "blog-github-issue-456"
+   # Press prefix + f, fuzzy find "blog-github-issue-456" or the parent session that holds a review window
    ```
    
    *Alternative:* You can use any tmux session manager, or attach directly:
@@ -98,8 +98,10 @@ go install github.com/obiMadu/shiphq@latest
 
 ```bash
 # Create agent from GitHub issue (requires --type flag)
-shiphq create --github 456 -t issue
-shiphq create --github 456 -t pr     # For PR reviews
+shiphq create --github 456 -t issue          # Dedicated session by default
+shiphq create --github 456 -t issue -w       # Force parent-session window
+shiphq create --github 456 -t pr             # Review opens a window by default
+shiphq create --github 456 -t pr -s          # Force dedicated session for review
 
 # Create agent from Jira ticket
 shiphq create --jira PROJ-123  
@@ -115,12 +117,22 @@ shiphq create --github 456 -t issue --agent opencode
 shiphq create --github 456 -t issue --agent claude
 shiphq create --github 456 -t issue --agent codex
 
-# Manage sessions
-shiphq list                                    # Show all sessions for current project
+# Manage workers
+shiphq list                                     # Show known workers for current project
+shiphq list --all                               # Show known workers across projects
 shiphq attach blog-github-issue-456             # Attach directly
-shiphq cleanup --id blog-github-issue-456       # Remove worktree + tmux
+shiphq promote --id blog-github-pr-456          # Promote a window worker into its own session
+shiphq cleanup --id blog-github-issue-456       # Remove worktree + tmux target
 shiphq cleanup --id blog-github-issue-456 --force
 ```
+
+Placement rules:
+
+- implementation work defaults to a dedicated tmux session
+- review work defaults to a worker window in the current tmux session
+- `-s` / `--launch session` forces a dedicated session
+- `-w` / `--launch window` forces a parent-session window and requires running inside tmux
+- `shiphq promote --id ...` upgrades a window worker into its own dedicated session
 
 ## Supported AI Agents
 
@@ -218,22 +230,23 @@ This works for both built-in prompts (from issues/PRs) and custom prompts via `-
 ## What shiphq Does
 
 1. **Fetches issue/PR/ticket** via GitHub/Jira CLI → extracts title + description
-2. **Creates branch** from issue → `github-issue-456` (uses number only)
-3. **Creates worktree** via `wt switch --create`
-4. **Starts tmux session** → `blog-github-issue-456` (format: {project}-{source}-{type}-{id})
+2. **Resolves the worker branch target** → for example `github-issue-456` for issue work, or a provider-specific review branch for PR work
+3. **Creates or switches the worktree** via `wt switch`
+4. **Starts tmux worker** → a dedicated session or a parent-session window, depending on work mode and launch flags
 5. **Writes `.shiphq/prompt.md`** in the worktree with the full task brief and ignores `/.shiphq/` locally
 6. **Spawns agent** → Your choice of AI agent (pi, opencode, claude, codex, or custom) with a bootstrap prompt
-7. **Cleans up** worktree + tmux on `cleanup`
+7. **Promotes** a lightweight window worker into a dedicated session on `promote`
+8. **Cleans up** worktree + tmux target on `cleanup`
 
 ## Why tmux?
 
-Each agent session runs in **tmux** (not headless) so you can:
+Each agent worker runs in **tmux** (not headless) so you can:
 
 - **Jump in anytime** to override the agent or do manual work
-- **Create new windows** for editing (`vim`), running servers (`npm run dev`), debugging (`docker-compose up`)
+- **Create new windows** for dedicated session workers when a task grows beyond a single window
 - **Multiple panes** - agent in one, logs in another, tests in a third
 
-It's a persistent workspace, not just a background process.
+Review workers can stay lightweight as a single parent-session window by default, then be promoted into a dedicated session when they need to grow.
 
 ## WorkTrunk Optimizations
 
@@ -261,7 +274,7 @@ This shares dependencies between worktrees so agents don't reinstall from scratc
 ┌──────────────────────────────────┐
 │ blog-github-issue-456            │
 │ ├─ Worktree: ./github-issue-456  │
-│ ├─ Tmux: agent window            │
+│ ├─ Tmux: dedicated session       │
 │ └─ Agent: claude (or pi,         │
 │            opencode, codex,      │
 │            or custom)            │
@@ -273,13 +286,15 @@ This shares dependencies between worktrees so agents don't reinstall from scratc
 ## Commands
 
 - `create --github <num> -t <type>` - Spawn agent from GitHub issue/PR (type: issue, pr)
+- `create ... --launch <session|window>` / `-s` / `-w` - Control tmux placement explicitly
 - `create --jira <id>` - Spawn agent from Jira ticket
 - `create --prompt "text"` - Spawn agent from custom prompt
 - `create ... --agent <name>` - Use specific AI agent (otherwise shiphq uses config `agents.default.name` or `pi`)
 - `create ... --prompt "custom"` - Override default prompt with custom instructions
-- `list` - Show active sessions for current project
-- `attach <id>` - Attach to tmux session
-- `cleanup --id <id> [--force]` - Remove worktree and session (`--force` uses `wt remove --force`)
+- `list` / `list --all` - Show known workers and whether they are running or stopped
+- `attach <id>` - Attach to the worker's tmux session or parent-session window
+- `promote --id <id>` - Promote a window worker into a dedicated tmux session
+- `cleanup --id <id> [--force]` - Remove worktree and tmux target (`--force` uses `wt remove --force`)
 
 ## License
 
