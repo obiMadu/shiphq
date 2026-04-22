@@ -15,8 +15,9 @@ import (
 )
 
 type Session struct {
-	ID     string
-	Status string
+	ID        string
+	Status    string
+	Placement session.PlacementKind
 }
 
 type LocalRuntime struct{}
@@ -28,13 +29,13 @@ const (
 	workerPromptExcludePattern = "/.shiphq/"
 )
 
-func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string) (Session, error) {
+func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string, placementKind session.PlacementKind) (Session, error) {
 	sessionLabel, err := generateBranchName(workItem)
 	if err != nil {
 		return Session{}, err
 	}
 
-	sessionID := fmt.Sprintf("%s-%s", project, sessionLabel)
+	workerID := fmt.Sprintf("%s-%s", project, sessionLabel)
 
 	configuredAgent, err := agent.Get(agentName)
 	if err != nil {
@@ -63,63 +64,82 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 		return Session{}, fmt.Errorf("wt switch failed: %w\n%s", err, output)
 	}
 
+	metadata := session.Metadata{
+		SessionID:     workerID,
+		Project:       project,
+		WorkItem:      workItem,
+		PlacementKind: placementKind,
+	}
+
 	worktreePath, err := findWorktreePath(worktreeLookupBranch)
 	if err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to resolve worktree path: %w", err), sessionID, worktreeLookupBranch)
+		metadata.Branch = worktreeLookupBranch
+		return Session{}, withCreateRollback(fmt.Errorf("failed to resolve worktree path: %w", err), metadata)
 	}
+	metadata.WorktreePath = worktreePath
 
 	actualBranch, err := currentWorktreeBranch(worktreePath)
 	if err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to resolve worktree branch: %w", err), sessionID, worktreePath)
+		metadata.Branch = worktreeLookupBranch
+		return Session{}, withCreateRollback(fmt.Errorf("failed to resolve worktree branch: %w", err), metadata)
 	}
+	metadata.Branch = actualBranch
 
 	if err := ignoreWorktreePattern(worktreePath, workerPromptExcludePattern); err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to ignore worker prompt directory: %w", err), sessionID, worktreePath)
+		return Session{}, withCreateRollback(fmt.Errorf("failed to ignore worker prompt directory: %w", err), metadata)
 	}
 
 	if err := writeWorkerPromptFile(worktreePath, workerPrompt); err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to write worker prompt file: %w", err), sessionID, worktreePath)
+		return Session{}, withCreateRollback(fmt.Errorf("failed to write worker prompt file: %w", err), metadata)
 	}
 
 	bootstrapPrompt := buildBootstrapPrompt(workerPromptRelativePath)
 	agentCommand := configuredAgent.BuildCommand(bootstrapPrompt)
 	sessionCommand, err := buildSessionCommand(agentCommand)
 	if err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to build session shell command: %w", err), sessionID, worktreePath)
+		return Session{}, withCreateRollback(fmt.Errorf("failed to build session shell command: %w", err), metadata)
 	}
 
-	sessionCreateCommand := exec.Command("tmux", "new-session", "-d", "-s", sessionID, "-n", "agent", "-c", worktreePath, sessionCommand)
-	if output, err := sessionCreateCommand.CombinedOutput(); err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("tmux create failed: %w\n%s", err, output), sessionID, worktreePath)
+	launchInfo, err := launchTmuxTarget(workerID, sessionLabel, worktreePath, sessionCommand, placementKind)
+	if err != nil {
+		return Session{}, withCreateRollback(err, metadata)
 	}
+	metadata.TmuxSessionID = launchInfo.SessionID
+	metadata.TmuxSessionName = launchInfo.SessionName
+	metadata.TmuxWindowID = launchInfo.WindowID
+	metadata.TmuxWindowName = launchInfo.WindowName
+	metadata.PlacementKind = launchInfo.PlacementKind
 
-	metadata := session.Metadata{
-		SessionID:    sessionID,
-		Project:      project,
-		Branch:       actualBranch,
-		WorktreePath: worktreePath,
-		WorkItem:     workItem,
-	}
 	if err := session.Save(metadata); err != nil {
-		return Session{}, withCreateRollback(fmt.Errorf("failed to save session metadata: %w", err), sessionID, worktreePath)
+		return Session{}, withCreateRollback(fmt.Errorf("failed to save session metadata: %w", err), metadata)
 	}
 
 	return Session{
-		ID:     sessionID,
-		Status: "running",
+		ID:        workerID,
+		Status:    "running",
+		Placement: metadata.EffectivePlacementKind(),
 	}, nil
 }
 
 func (localRuntime LocalRuntime) List(project string) ([]Session, error) {
-	runningSessionIDs, err := listTmuxSessionIDs()
+	metadataItems, err := session.List()
 	if err != nil {
 		return nil, err
 	}
 
-	sessions := make([]Session, 0, len(runningSessionIDs))
-	for sessionID := range runningSessionIDs {
-		if strings.HasPrefix(sessionID, project+"-") {
-			sessions = append(sessions, Session{ID: sessionID, Status: "running"})
+	tmuxState, err := inspectTmuxState()
+	if err != nil {
+		return nil, err
+	}
+
+	sessions := make([]Session, 0, len(metadataItems))
+	for _, metadata := range metadataItems {
+		if metadata.Project == project {
+			sessions = append(sessions, Session{
+				ID:        metadata.SessionID,
+				Status:    statusForMetadata(metadata, tmuxState),
+				Placement: metadata.EffectivePlacementKind(),
+			})
 		}
 	}
 
@@ -136,19 +156,18 @@ func (localRuntime LocalRuntime) ListAll() ([]Session, error) {
 		return nil, err
 	}
 
-	runningSessionIDs, err := listTmuxSessionIDs()
+	tmuxState, err := inspectTmuxState()
 	if err != nil {
 		return nil, err
 	}
 
 	sessions := make([]Session, 0, len(metadataItems))
 	for _, metadata := range metadataItems {
-		status := "stopped"
-		if _, ok := runningSessionIDs[metadata.SessionID]; ok {
-			status = "running"
-		}
-
-		sessions = append(sessions, Session{ID: metadata.SessionID, Status: status})
+		sessions = append(sessions, Session{
+			ID:        metadata.SessionID,
+			Status:    statusForMetadata(metadata, tmuxState),
+			Placement: metadata.EffectivePlacementKind(),
+		})
 	}
 
 	sort.Slice(sessions, func(i, j int) bool {
@@ -158,33 +177,31 @@ func (localRuntime LocalRuntime) ListAll() ([]Session, error) {
 	return sessions, nil
 }
 
-func listTmuxSessionIDs() (map[string]struct{}, error) {
-	listCommand := exec.Command("tmux", "list-sessions", "-F", "#S")
-	output, err := listCommand.CombinedOutput()
-	if err != nil {
-		if isNoTmuxServer(output) {
-			return map[string]struct{}{}, nil
-		}
-
-		return nil, fmt.Errorf("tmux list failed: %w\n%s", err, output)
-	}
-
-	sessionIDs := make(map[string]struct{})
-	for _, line := range strings.Split(string(output), "\n") {
-		sessionID := strings.TrimSpace(line)
-		if sessionID == "" {
-			continue
-		}
-
-		sessionIDs[sessionID] = struct{}{}
-	}
-
-	return sessionIDs, nil
-}
-
 func isNoTmuxServer(output []byte) bool {
 	lowerOutput := strings.ToLower(string(output))
 	return strings.Contains(lowerOutput, "no server running") || strings.Contains(lowerOutput, "failed to connect to server")
+}
+
+func statusForMetadata(metadata session.Metadata, tmuxState tmuxState) string {
+	if tmuxPlacementExists(metadata, tmuxState) {
+		return "running"
+	}
+
+	return "stopped"
+}
+
+func tmuxPlacementExists(metadata session.Metadata, tmuxState tmuxState) bool {
+	if metadata.EffectivePlacementKind() == session.PlacementKindWindow {
+		_, exists := tmuxState.windowIDs[metadata.EffectiveTmuxWindowTarget()]
+		return exists
+	}
+
+	if _, exists := tmuxState.sessionIDs[metadata.EffectiveTmuxSessionTarget()]; exists {
+		return true
+	}
+
+	_, exists := tmuxState.sessionNames[metadata.EffectiveTmuxSessionTarget()]
+	return exists
 }
 
 func writeWorkerPromptFile(worktreePath, prompt string) error {
@@ -417,11 +434,12 @@ func currentWorktreeBranch(worktreePath string) (string, error) {
 }
 
 func (localRuntime LocalRuntime) Attach(sessionID string) error {
-	attachCommand := exec.Command("tmux", "attach", "-t", sessionID)
-	attachCommand.Stdin = os.Stdin
-	attachCommand.Stdout = os.Stdout
-	attachCommand.Stderr = os.Stderr
-	return attachCommand.Run()
+	metadata, err := session.Load(sessionID)
+	if err != nil {
+		return err
+	}
+
+	return attachTmuxPlacement(metadata)
 }
 
 func (localRuntime LocalRuntime) Cleanup(sessionID string, force bool) error {
@@ -432,7 +450,7 @@ func (localRuntime LocalRuntime) Cleanup(sessionID string, force bool) error {
 
 	var cleanupErrors []string
 
-	if err := cleanupTmuxSession(sessionID); err != nil {
+	if err := killTmuxPlacement(metadata); err != nil {
 		cleanupErrors = append(cleanupErrors, err.Error())
 	}
 
@@ -461,14 +479,52 @@ func (localRuntime LocalRuntime) Cleanup(sessionID string, force bool) error {
 	return nil
 }
 
-func cleanupTmuxSession(sessionID string) error {
-	sessionKillCommand := exec.Command("tmux", "kill-session", "-t", sessionID)
-	output, err := sessionKillCommand.CombinedOutput()
-	if err == nil || isMissingTmuxSession(output) {
-		return nil
+func (localRuntime LocalRuntime) Promote(sessionID string) (Session, error) {
+	metadata, err := session.Load(sessionID)
+	if err != nil {
+		return Session{}, err
 	}
 
-	return fmt.Errorf("tmux kill failed: %v\n%s", err, output)
+	if metadata.EffectivePlacementKind() == session.PlacementKindSession {
+		return Session{}, fmt.Errorf("worker %s is already in a dedicated tmux session", sessionID)
+	}
+
+	windowTarget := metadata.EffectiveTmuxWindowTarget()
+	if windowTarget == "" {
+		return Session{}, fmt.Errorf("worker %s is missing its tmux window target", sessionID)
+	}
+	if strings.TrimSpace(metadata.WorktreePath) == "" {
+		return Session{}, fmt.Errorf("worker %s is missing its worktree path", sessionID)
+	}
+
+	tmuxState, err := inspectTmuxState()
+	if err != nil {
+		return Session{}, err
+	}
+	if !tmuxPlacementExists(metadata, tmuxState) {
+		return Session{}, fmt.Errorf("worker %s is not currently running in tmux", sessionID)
+	}
+
+	launchInfo, err := promoteTmuxWindowToSession(metadata.SessionID, metadata.WorktreePath, windowTarget, metadata.TmuxWindowName)
+	if err != nil {
+		return Session{}, err
+	}
+
+	metadata.PlacementKind = launchInfo.PlacementKind
+	metadata.TmuxSessionID = launchInfo.SessionID
+	metadata.TmuxSessionName = launchInfo.SessionName
+	metadata.TmuxWindowID = launchInfo.WindowID
+	metadata.TmuxWindowName = launchInfo.WindowName
+
+	if err := session.Save(metadata); err != nil {
+		return Session{}, fmt.Errorf("failed to save promoted worker metadata: %w", err)
+	}
+
+	return Session{
+		ID:        metadata.SessionID,
+		Status:    "running",
+		Placement: metadata.EffectivePlacementKind(),
+	}, nil
 }
 
 func cleanupWorktree(worktreeTarget string, force bool) error {
@@ -542,21 +598,26 @@ func findWorktreePath(branch string) (string, error) {
 	return "", fmt.Errorf("worktree not found for branch %s", branch)
 }
 
-func withCreateRollback(createErr error, sessionID, branch string) error {
+func withCreateRollback(createErr error, metadata session.Metadata) error {
 	var rollbackErrors []string
 
-	if sessionID != "" {
-		if err := cleanupTmuxSession(sessionID); err != nil {
+	if metadata.SessionID != "" {
+		if err := killTmuxPlacement(metadata); err != nil {
 			rollbackErrors = append(rollbackErrors, err.Error())
 		}
 
-		if err := session.Delete(sessionID); err != nil {
+		if err := session.Delete(metadata.SessionID); err != nil {
 			rollbackErrors = append(rollbackErrors, err.Error())
 		}
 	}
 
-	if branch != "" {
-		if err := cleanupWorktree(branch, false); err != nil {
+	worktreeTarget := strings.TrimSpace(metadata.WorktreePath)
+	if worktreeTarget == "" {
+		worktreeTarget = strings.TrimSpace(metadata.Branch)
+	}
+
+	if worktreeTarget != "" {
+		if err := cleanupWorktree(worktreeTarget, false); err != nil {
 			rollbackErrors = append(rollbackErrors, err.Error())
 		}
 	}

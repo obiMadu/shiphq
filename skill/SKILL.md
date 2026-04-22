@@ -22,23 +22,25 @@ shiphq is a local workflow for turning task descriptions into PRs and for review
 The main value is not just "spawn an agent." The value is:
 
 1. take a task description or PR review target
-2. create an isolated worktree and tmux session
+2. create an isolated worktree and a tmux worker (dedicated session or parent-session window)
 3. run a worker agent inside that real local workspace
 4. let the human attach whenever they want
 5. drive the work all the way to a PR
 
-This is why tmux matters: the worker is running in a normal session the human can inspect, override, and extend with extra windows and panes.
+This is why tmux matters: the worker is running in a normal tmux environment the human can inspect, override, and extend when needed.
 
 ## Orchestrator behavior
 
 You are the orchestrator running in the main tmux session.
 
 - Spawn workers with `shiphq create`
-- Do not attach to the worker session after spawning it
+- Do not attach to the worker after spawning it
 - Tell the human how to attach if they want to inspect or intervene
 - Let shiphq use its configured default agent when the user does not specify one
 - Only use `--agent <name>` if the user explicitly asks for a different agent or wants to override config
 - Never recommend or install a different agent on your own
+- Let shiphq use its default placement unless the user explicitly asks for `-s`, `-w`, or `--launch`
+- By default, implementation work opens a dedicated tmux session and review work opens a worker window in the current tmux session
 
 ## Default agent choice
 
@@ -80,6 +82,13 @@ For **GitHub PRs**, the default worker behavior is review-only:
 - do not implement fixes
 - do not commit, push, approve, merge, or otherwise modify the PR
 
+Placement defaults:
+
+- implementation work defaults to a dedicated tmux `session`
+- review work defaults to a parent-session tmux `window`
+- use `-s` / `--launch session` only when the user explicitly wants a dedicated session
+- use `-w` / `--launch window` only when the user explicitly wants a parent-session window or when they are relying on the review default
+
 For **task descriptions** from Jira tickets, the intended default is the same end-to-end implementation-to-PR workflow, but the current Jira adapter is still not implemented.
 
 If the user passes `--prompt` along with `--github` or `--jira`, shiphq keeps the source context and adds the user's instructions.
@@ -106,12 +115,14 @@ Do not describe Jira as fully working today. If the user asks for it, say the co
 
 ```bash
 shiphq create --github 456 -t issue
+shiphq create --github 456 -t issue -w
 ```
 
 ### GitHub PR
 
 ```bash
 shiphq create --github 456 -t pr
+shiphq create --github 456 -t pr -s
 ```
 
 ### Custom prompt
@@ -132,12 +143,13 @@ shiphq create --github 456 -t issue --prompt "Start by writing tests"
 shiphq create --github 456 -t issue --agent claude
 ```
 
-### Session management
+### Worker management
 
 ```bash
 shiphq list
 shiphq list --all
 shiphq attach project-github-issue-456
+shiphq promote --id project-github-pr-456
 shiphq cleanup --id project-github-issue-456
 shiphq cleanup --id project-github-issue-456 --force
 ```
@@ -148,7 +160,12 @@ shiphq cleanup --id project-github-issue-456 --force
 - Jira does not use `-t`
 - `--prompt` by itself means a custom prompt task
 - `--prompt` with `--github` or `--jira` means "keep the source context and add these instructions"
-- `list` shows running sessions for the current detected project; use `list --all` to see ShipHQ sessions across projects
+- `review` work defaults to `window` placement; `implement` work defaults to `session` placement
+- `-s` forces a dedicated tmux session
+- `-w` forces a worker window in the current tmux session
+- `-w` / `--launch window` requires running inside tmux
+- `list` shows known workers for the current detected project; use `list --all` to see ShipHQ workers across projects
+- `promote --id ...` upgrades a window worker into a dedicated tmux session
 - `cleanup --force` uses `wt remove --force` for the worktree
 - **Do not use `--prompt` with `--github` or `--jira` unless the user explicitly asks for custom instructions.** The built-in prompts for issues and PRs already contain the complete PR workflow (implement, commit, push, open PR, report URL). Adding a custom prompt usually strips out these steps because agents rarely include the full delivery workflow in their override text. Only add `--prompt` when the user specifically requests extra instructions like "Start by writing tests" or "Use this specific approach."
 
@@ -157,19 +174,19 @@ shiphq cleanup --id project-github-issue-456 --force
 After `shiphq create`:
 
 - the worker keeps running in the background
-- the human can attach to that tmux session
+- the human can attach to that tmux worker (dedicated session or parent-session window)
 - you must not attach on the human's behalf
 
 Good follow-up response:
 
-> Created session `project-github-issue-456`. The worker is running in the background. You can jump in with tmux-sessionx or run `shiphq attach project-github-issue-456`.
+> Created worker `project-github-issue-456`. The worker is running in the background. You can jump in with tmux-sessionx or run `shiphq attach project-github-issue-456`.
 
 ## Why users may choose shiphq over other agent tools
 
 When relevant, emphasize these points:
 
 - it is local and inspectable
-- tmux sessions are first-class, not an afterthought
+- tmux workers are first-class, not an afterthought
 - worktrees are easy to create and clean up
 - humans can jump in at any point
 - WorkTrunk hooks can reuse ignored files and caches to reduce cold starts
