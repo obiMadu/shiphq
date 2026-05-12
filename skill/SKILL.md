@@ -1,7 +1,7 @@
 ---
-name: shiphq
+name: wtmag
 description: |
-  Orchestrate local AI workers with Git worktrees, tmux, and shiphq.
+  Orchestrate local AI workers with Git worktrees, tmux, and wtmag.
 
   Use this skill whenever the user wants to:
   - Spawn parallel AI agents from task descriptions (GitHub issues, Jira tickets, prompts) or PRs
@@ -9,15 +9,15 @@ description: |
   - Run an orchestrator/worker workflow inside tmux
   - Manage background agent sessions they can manually jump into later
 
-  Trigger on mentions of: shiphq, task descriptions, worktrees, tmux sessions,
+  Trigger on mentions of: wtmag, task descriptions, worktrees, tmux sessions,
   parallel workers, orchestrators, background coding agents, or local task-description-to-PR delivery.
 ---
 
-# shiphq Skill
+# wtmag Skill
 
-## What shiphq is for
+## What wtmag is for
 
-shiphq is a local workflow for turning task descriptions into PRs and for reviewing PRs.
+wtmag is a local workflow for turning task descriptions into PRs and for reviewing PRs.
 
 The main value is not just "spawn an agent." The value is:
 
@@ -33,20 +33,20 @@ This is why tmux matters: the worker is running in a normal tmux environment the
 
 You are the orchestrator running in the main tmux session.
 
-- Spawn workers with `shiphq create`
+- Spawn workers with `wtmag create`
 - Do not attach to the worker after spawning it
 - Tell the human how to attach if they want to inspect or intervene
-- Let shiphq use its configured default agent when the user does not specify one
+- Let wtmag use its configured default agent when the user does not specify one
 - Only use `--agent <name>` if the user explicitly asks for a different agent or wants to override config
 - Never recommend or install a different agent on your own
-- Let shiphq use its default placement unless the user explicitly asks for `-s`, `-w`, or `--launch`
+- Let wtmag use its default placement unless the user explicitly asks for `-s`, `-w`, or `--launch`
 - By default, implementation work opens a dedicated tmux session and review work opens a worker window in the current tmux session
 
 ## Default agent choice
 
-shiphq uses `agents.default.name` from `~/.config/shiphq/config.toml`.
+wtmag uses `agents.default.name` from `~/.config/wtmag/config.toml`.
 
-On first run, shiphq creates that config file if it does not exist yet. The generated config includes the bundled agent definitions (`pi`, `opencode`, `claude`, `codex`) and sets `pi` as the initial default.
+On first run, wtmag creates that config file if it does not exist yet. The generated config includes the bundled agent definitions (`pi`, `opencode`, `claude`, `codex`) and sets `pi` as the initial default.
 
 That default can point to one of those bundled agents or to a custom agent the user defines under `[agents.<name>]`, but you should only select a different agent when the user explicitly requests it.
 
@@ -57,16 +57,16 @@ Built-in prompt delivery:
 
 Examples:
 
-- default: `shiphq create --github 456 -t issue`
-- user explicitly asks for OpenCode: `shiphq create --github 456 -t issue --agent opencode`
-- user explicitly asks for Claude: `shiphq create --github 456 -t issue --agent claude`
-- user explicitly asks for Codex: `shiphq create --github 456 -t issue --agent codex`
+- default: `wtmag create --github 456 -t issue`
+- user explicitly asks for OpenCode: `wtmag create --github 456 -t issue --agent opencode`
+- user explicitly asks for Claude: `wtmag create --github 456 -t issue --agent claude`
+- user explicitly asks for Codex: `wtmag create --github 456 -t issue --agent codex`
 
 ## What the worker is supposed to do
 
 `Task descriptions` is the umbrella product term only. Do not flatten source-native terminology in commands or prompts: GitHub issues are still GitHub issues, Jira tickets are still Jira tickets, and PR review targets are still PRs.
 
-For **task descriptions** such as GitHub issues, shiphq's default prompt is end-to-end delivery oriented:
+For **task descriptions** such as GitHub issues, wtmag's default prompt is end-to-end delivery oriented:
 
 - implement the task
 - commit the changes
@@ -91,7 +91,7 @@ Placement defaults:
 
 For **task descriptions** from Jira tickets, the intended default is the same end-to-end implementation-to-PR workflow, but the current Jira adapter is still not implemented.
 
-If the user passes `--prompt` along with `--github` or `--jira`, shiphq keeps the source context and adds the user's instructions.
+If the user passes `--prompt` along with `--github` or `--jira`, wtmag keeps the source context and adds the user's instructions.
 
 ## Current product shape
 
@@ -114,44 +114,44 @@ Do not describe Jira as fully working today. If the user asks for it, say the co
 ### GitHub issue
 
 ```bash
-shiphq create --github 456 -t issue
-shiphq create --github 456 -t issue -w
+wtmag create --github 456 -t issue
+wtmag create --github 456 -t issue -w
 ```
 
 ### GitHub PR
 
 ```bash
-shiphq create --github 456 -t pr
-shiphq create --github 456 -t pr -s
+wtmag create --github 456 -t pr
+wtmag create --github 456 -t pr -s
 ```
 
 ### Custom prompt
 
 ```bash
-shiphq create --prompt "Refactor authentication middleware"
+wtmag create --prompt "Refactor authentication middleware"
 ```
 
 ### Add custom instructions to a GitHub issue
 
 ```bash
-shiphq create --github 456 -t issue --prompt "Start by writing tests"
+wtmag create --github 456 -t issue --prompt "Start by writing tests"
 ```
 
 ### Use a different agent only when requested
 
 ```bash
-shiphq create --github 456 -t issue --agent claude
+wtmag create --github 456 -t issue --agent claude
 ```
 
 ### Worker management
 
 ```bash
-shiphq list
-shiphq list --all
-shiphq attach project-github-issue-456
-shiphq promote --id project-github-pr-456
-shiphq cleanup --id project-github-issue-456
-shiphq cleanup --id project-github-issue-456 --force
+wtmag list
+wtmag list --all
+wtmag attach project-github-issue-456
+wtmag promote --id project-github-pr-456
+wtmag cleanup --id project-github-issue-456
+wtmag cleanup --id project-github-issue-456 --force
 ```
 
 ## Important command rules
@@ -164,14 +164,14 @@ shiphq cleanup --id project-github-issue-456 --force
 - `-s` forces a dedicated tmux session
 - `-w` forces a worker window in the current tmux session
 - `-w` / `--launch window` requires running inside tmux
-- `list` shows known workers for the current detected project; use `list --all` to see ShipHQ workers across projects
+- `list` shows known workers for the current detected project; use `list --all` to see WTmag workers across projects
 - `promote --id ...` upgrades a window worker into a dedicated tmux session
 - `cleanup --force` uses `wt remove --force` for the worktree
 - **Do not use `--prompt` with `--github` or `--jira` unless the user explicitly asks for custom instructions.** The built-in prompts for issues and PRs already contain the complete PR workflow (implement, commit, push, open PR, report URL). Adding a custom prompt usually strips out these steps because agents rarely include the full delivery workflow in their override text. Only add `--prompt` when the user specifically requests extra instructions like "Start by writing tests" or "Use this specific approach."
 
 ## Human vs orchestrator responsibilities
 
-After `shiphq create`:
+After `wtmag create`:
 
 - the worker keeps running in the background
 - the human can attach to that tmux worker (dedicated session or parent-session window)
@@ -179,9 +179,9 @@ After `shiphq create`:
 
 Good follow-up response:
 
-> Created worker `project-github-issue-456`. The worker is running in the background. You can jump in with tmux-sessionx or run `shiphq attach project-github-issue-456`.
+> Created worker `project-github-issue-456`. The worker is running in the background. You can jump in with tmux-sessionx or run `wtmag attach project-github-issue-456`.
 
-## Why users may choose shiphq over other agent tools
+## Why users may choose wtmag over other agent tools
 
 When relevant, emphasize these points:
 

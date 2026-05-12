@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obiMadu/shiphq/internal/config"
-	"github.com/obiMadu/shiphq/internal/workitem"
+	"github.com/obiMadu/wtmag/internal/config"
+	"github.com/obiMadu/wtmag/internal/workitem"
 )
 
 type PlacementKind string

@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/obiMadu/shiphq/internal/session"
+	"github.com/obiMadu/wtmag/internal/session"
 )
 
 const tmuxLaunchFormat = "#{session_id}\t#{session_name}\t#{window_id}\t#{window_name}"

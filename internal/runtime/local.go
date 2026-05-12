@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obiMadu/shiphq/internal/agent"
-	"github.com/obiMadu/shiphq/internal/session"
-	"github.com/obiMadu/shiphq/internal/workitem"
+	"github.com/obiMadu/wtmag/internal/agent"
+	"github.com/obiMadu/wtmag/internal/session"
+	"github.com/obiMadu/wtmag/internal/workitem"
 )
 
 type Session struct {
@@ -23,10 +23,10 @@ type Session struct {
 type LocalRuntime struct{}
 
 const (
-	workerPromptDirName        = ".shiphq"
+	workerPromptDirName        = ".wtmag"
 	workerPromptFileName       = "prompt.md"
 	workerPromptRelativePath   = workerPromptDirName + "/" + workerPromptFileName
-	workerPromptExcludePattern = "/.shiphq/"
+	workerPromptExcludePattern = "/.wtmag/"
 )
 
 func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string, placementKind session.PlacementKind) (Session, error) {
@@ -470,7 +470,7 @@ func (localRuntime LocalRuntime) Cleanup(sessionID string, force bool) error {
 
 	if len(cleanupErrors) > 0 {
 		if !force {
-			cleanupErrors = append(cleanupErrors, fmt.Sprintf("Cleanup failed. Consider retrying with `shiphq cleanup --id %s --force`.", sessionID))
+			cleanupErrors = append(cleanupErrors, fmt.Sprintf("Cleanup failed. Consider retrying with `wtmag cleanup --id %s --force`.", sessionID))
 		}
 		return errors.New(strings.Join(cleanupErrors, "\n"))
 	}
@@ -509,7 +509,7 @@ func ensureCleanupPreflight(sessionID string, metadata session.Metadata, force b
 		return err
 	}
 	if dirtyWorktree {
-		return fmt.Errorf("cleanup aborted: worker %s has uncommitted changes\nworker remains running and tracked; commit or stash changes first, or rerun with `shiphq cleanup --id %s --force`", sessionID, sessionID)
+		return fmt.Errorf("cleanup aborted: worker %s has uncommitted changes\nworker remains running and tracked; commit or stash changes first, or rerun with `wtmag cleanup --id %s --force`", sessionID, sessionID)
 	}
 
 	return nil

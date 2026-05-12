@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/obiMadu/shiphq/internal/config"
+	"github.com/obiMadu/wtmag/internal/config"
 )
 
 // Agent represents an AI coding agent that can be spawned in sessions

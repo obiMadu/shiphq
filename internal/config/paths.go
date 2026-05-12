@@ -6,21 +6,21 @@ import (
 	"path/filepath"
 )
 
-// GetConfigDir returns the XDG-compliant config directory for shiphq
+// GetConfigDir returns the XDG-compliant config directory for wtmag
 // Uses XDG_CONFIG_HOME if set, otherwise ~/.config
 func GetConfigDir() string {
 	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfig != "" {
-		return filepath.Join(xdgConfig, "shiphq")
+		return filepath.Join(xdgConfig, "wtmag")
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		// Fallback to current dir if we can't get home
-		return "shiphq"
+		return "wtmag"
 	}
 
-	return filepath.Join(home, ".config", "shiphq")
+	return filepath.Join(home, ".config", "wtmag")
 }
 
 // GetConfigPath returns the full path to the config file
@@ -63,20 +63,20 @@ func EnsureConfigFile(contents []byte) error {
 	return nil
 }
 
-// GetStateDir returns the XDG-compliant state directory for shiphq
+// GetStateDir returns the XDG-compliant state directory for wtmag
 // Uses XDG_STATE_HOME if set, otherwise ~/.local/state
 func GetStateDir() string {
 	xdgState := os.Getenv("XDG_STATE_HOME")
 	if xdgState != "" {
-		return filepath.Join(xdgState, "shiphq")
+		return filepath.Join(xdgState, "wtmag")
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "shiphq-state"
+		return "wtmag-state"
 	}
 
-	return filepath.Join(home, ".local", "state", "shiphq")
+	return filepath.Join(home, ".local", "state", "wtmag")
 }
 
 // GetSessionStateDir returns the directory used for session metadata

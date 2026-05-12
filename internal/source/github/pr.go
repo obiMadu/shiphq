@@ -1,8 +1,8 @@
 package github
 
 import (
-	"github.com/obiMadu/shiphq/internal/source"
-	"github.com/obiMadu/shiphq/internal/workitem"
+	"github.com/obiMadu/wtmag/internal/source"
+	"github.com/obiMadu/wtmag/internal/workitem"
 )
 
 type pullRequestProvider struct{}

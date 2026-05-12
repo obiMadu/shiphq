@@ -1,9 +1,9 @@
-# ShipHQ writes this template to ~/.config/shiphq/config.toml on first run if the file does not exist.
+# WTmag writes this template to ~/.config/wtmag/config.toml on first run if the file does not exist.
 # You can also copy it there yourself and edit it ahead of time.
 
 # Default agent selection.
 [agents.default]
-# ShipHQ uses this agent when `--agent` is omitted.
+# WTmag uses this agent when `--agent` is omitted.
 # Use one of the built-in agent names below, or whatever comes after `agents.` in a custom agent definition.
 name = "pi"
 
@@ -28,7 +28,7 @@ prompt_flag = ""
 # Custom agent examples.
 # Each [agents.<name>] block defines one agent.
 # The <name> is what you pass to `--agent`, and what you can use in [agents.default].name.
-# `prompt_flag` is optional. If you omit it, ShipHQ passes the prompt positionally.
+# `prompt_flag` is optional. If you omit it, WTmag passes the prompt positionally.
 
 # [agents.aider]
 # command = "aider"

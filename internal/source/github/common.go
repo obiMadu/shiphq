@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/obiMadu/shiphq/internal/workitem"
+	"github.com/obiMadu/wtmag/internal/workitem"
 )
 
 type viewPayload struct {

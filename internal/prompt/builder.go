@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/obiMadu/shiphq/internal/repository"
-	"github.com/obiMadu/shiphq/internal/workitem"
+	"github.com/obiMadu/wtmag/internal/repository"
+	"github.com/obiMadu/wtmag/internal/workitem"
 )
 
 func BuildDefault(workItem workitem.WorkItem, repositoryTarget repository.Target) string {

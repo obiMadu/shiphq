@@ -3,7 +3,7 @@ package source
 import (
 	"fmt"
 
-	"github.com/obiMadu/shiphq/internal/workitem"
+	"github.com/obiMadu/wtmag/internal/workitem"
 )
 
 type Provider interface {

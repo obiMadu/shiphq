@@ -7,16 +7,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obiMadu/shiphq/internal/agent"
-	createinput "github.com/obiMadu/shiphq/internal/cli"
-	"github.com/obiMadu/shiphq/internal/config"
-	promptbuilder "github.com/obiMadu/shiphq/internal/prompt"
-	"github.com/obiMadu/shiphq/internal/repository"
-	"github.com/obiMadu/shiphq/internal/runtime"
-	"github.com/obiMadu/shiphq/internal/session"
-	"github.com/obiMadu/shiphq/internal/source"
-	_ "github.com/obiMadu/shiphq/internal/source/providers"
-	"github.com/obiMadu/shiphq/internal/workitem"
+	"github.com/obiMadu/wtmag/internal/agent"
+	createinput "github.com/obiMadu/wtmag/internal/cli"
+	"github.com/obiMadu/wtmag/internal/config"
+	promptbuilder "github.com/obiMadu/wtmag/internal/prompt"
+	"github.com/obiMadu/wtmag/internal/repository"
+	"github.com/obiMadu/wtmag/internal/runtime"
+	"github.com/obiMadu/wtmag/internal/session"
+	"github.com/obiMadu/wtmag/internal/source"
+	_ "github.com/obiMadu/wtmag/internal/source/providers"
+	"github.com/obiMadu/wtmag/internal/workitem"
 	"github.com/spf13/cobra"
 )
 
@@ -37,9 +37,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "shiphq",
+	Use:   "wtmag",
 	Short: "Local orchestrator for task descriptions and PR reviews",
-	Long: `shiphq creates isolated local worktrees and tmux-backed agent workers 
+	Long: `wtmag creates isolated local worktrees and tmux-backed agent workers 
 from task descriptions (GitHub issues, Jira tickets, custom prompts) and for PR reviews.`,
 }
 
@@ -154,7 +154,7 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✓ Created worker: %s (%s)\n", workerSession.ID, workerSession.Placement)
-	fmt.Printf("  Attach: shiphq attach %s\n", workerSession.ID)
+	fmt.Printf("  Attach: wtmag attach %s\n", workerSession.ID)
 	return nil
 }
 
@@ -203,7 +203,7 @@ func promoteCmdRun(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✓ Promoted worker: %s (%s)\n", workerSession.ID, workerSession.Placement)
-	fmt.Printf("  Attach: shiphq attach %s\n", workerSession.ID)
+	fmt.Printf("  Attach: wtmag attach %s\n", workerSession.ID)
 	return nil
 }
 
