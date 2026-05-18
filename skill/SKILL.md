@@ -40,13 +40,16 @@ You are the orchestrator running in the main tmux session.
 - Only use `--agent <name>` if the user explicitly asks for a different agent or wants to override config
 - Never recommend or install a different agent on your own
 - Let wtmag use its default placement unless the user explicitly asks for `-s`, `-w`, or `--launch`
-- By default, implementation work opens a dedicated tmux session and review work opens a worker window in the current tmux session
+- Generated config defaults both implementation work and review work to a worker window in the current tmux session
+- With the generated defaults, `wtmag create` should usually be run inside tmux unless the user explicitly overrides placement to `session`
 
 ## Default agent choice
 
-wtmag uses `agents.default.name` from `~/.config/wtmag/config.toml`.
+wtmag resolves `agents.default.name` from `wtmag.toml` in the current project first, then `~/.config/wtmag/config.toml`.
 
-On first run, wtmag creates that config file if it does not exist yet. The generated config includes the bundled agent definitions (`pi`, `opencode`, `claude`, `codex`) and sets `pi` as the initial default.
+On first run, wtmag creates the global home config if it does not exist yet. The generated config includes the bundled agent definitions (`pi`, `opencode`, `claude`, `codex`) and sets `pi` as the initial default.
+
+wtmag resolves `[launch] implementation` and `[launch] review` with the same precedence. The generated config sets both defaults to `window`.
 
 That default can point to one of those bundled agents or to a custom agent the user defines under `[agents.<name>]`, but you should only select a different agent when the user explicitly requests it.
 
@@ -84,10 +87,9 @@ For **GitHub PRs**, the default worker behavior is review-only:
 
 Placement defaults:
 
-- implementation work defaults to a dedicated tmux `session`
-- review work defaults to a parent-session tmux `window`
+- generated config defaults both implementation work and review work to a parent-session tmux `window`
 - use `-s` / `--launch session` only when the user explicitly wants a dedicated session
-- use `-w` / `--launch window` only when the user explicitly wants a parent-session window or when they are relying on the review default
+- use `-w` / `--launch window` only when the user explicitly wants a parent-session window or when they are relying on the configured default
 
 For **task descriptions** from Jira tickets, the intended default is the same end-to-end implementation-to-PR workflow, but the current Jira adapter is still not implemented.
 
@@ -115,14 +117,12 @@ Do not describe Jira as fully working today. If the user asks for it, say the co
 
 ```bash
 wtmag create --github 456 -t issue
-wtmag create --github 456 -t issue -w
 ```
 
 ### GitHub PR
 
 ```bash
 wtmag create --github 456 -t pr
-wtmag create --github 456 -t pr -s
 ```
 
 ### Custom prompt
@@ -160,9 +160,9 @@ wtmag cleanup --id project-github-issue-456 --force
 - Jira does not use `-t`
 - `--prompt` by itself means a custom prompt task
 - `--prompt` with `--github` or `--jira` means "keep the source context and add these instructions"
-- `review` work defaults to `window` placement; `implement` work defaults to `session` placement
-- `-s` forces a dedicated tmux session
-- `-w` forces a worker window in the current tmux session
+- generated config defaults both `review` and `implement` work to `window` placement
+- `-s` / `--launch session` forces a dedicated tmux session
+- `-w` / `--launch window` forces a worker window in the current tmux session
 - `-w` / `--launch window` requires running inside tmux
 - `list` shows known workers for the current detected project; use `list --all` to see WTmag workers across projects
 - `promote --id ...` upgrades a window worker into a dedicated tmux session
@@ -190,5 +190,3 @@ When relevant, emphasize these points:
 - worktrees are easy to create and clean up
 - humans can jump in at any point
 - WorkTrunk hooks can reuse ignored files and caches to reduce cold starts
-
-

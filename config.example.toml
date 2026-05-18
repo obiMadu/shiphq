@@ -1,11 +1,18 @@
 # WTmag writes this template to ~/.config/wtmag/config.toml on first run if the file does not exist.
-# You can also copy it there yourself and edit it ahead of time.
+# You can also copy the same schema into repo-local wtmag.toml to override the global config per project.
 
 # Default agent selection.
 [agents.default]
 # WTmag uses this agent when `--agent` is omitted.
 # Use one of the built-in agent names below, or whatever comes after `agents.` in a custom agent definition.
 name = "pi"
+
+# Default launch placement when no CLI launch override is provided.
+[launch]
+# Valid values: "window" or "session"
+# With "window", run wtmag inside tmux or override a single run with `-s` / `--launch session`.
+implementation = "window"
+review = "window"
 
 # Built-in agent definitions.
 # Edit these if you want the built-in names to launch differently on your machine.

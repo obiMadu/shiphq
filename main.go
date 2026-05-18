@@ -83,7 +83,7 @@ func init() {
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
 	createCmd.Flags().StringVar(&launchFlag, "launch", "", "Launch worker in `session` or `window` mode")
-	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to config agents.default.name)")
+	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to agents.default.name from wtmag.toml or ~/.config/wtmag/config.toml)")
 	createCmd.Flags().BoolVarP(&sessionLaunchFlag, "session", "s", false, "Launch worker in a dedicated tmux session")
 	createCmd.Flags().BoolVarP(&windowLaunchFlag, "window", "w", false, "Launch worker in the current tmux session as a window")
 	listCmd.Flags().BoolVar(&allFlag, "all", false, "List workers across all projects")
@@ -296,9 +296,22 @@ func resolveLaunchPlacement(workItem workitem.WorkItem) (session.PlacementKind, 
 		return session.PlacementKindWindow, nil
 	}
 
-	if workItem.Mode == workitem.ModeReview {
-		return session.PlacementKindWindow, nil
+	configuredValues, err := config.Load()
+	if err != nil {
+		return "", err
 	}
 
-	return session.PlacementKindSession, nil
+	configuredLaunch := configuredValues.Launch.Implementation
+	if workItem.Mode == workitem.ModeReview {
+		configuredLaunch = configuredValues.Launch.Review
+	}
+
+	switch strings.ToLower(strings.TrimSpace(configuredLaunch)) {
+	case string(session.PlacementKindSession):
+		return session.PlacementKindSession, nil
+	case string(session.PlacementKindWindow):
+		return session.PlacementKindWindow, nil
+	default:
+		return "", fmt.Errorf("invalid launch default %q for %s work in %s (use 'session' or 'window')", configuredLaunch, workItem.Mode, config.LookupDescription())
+	}
 }

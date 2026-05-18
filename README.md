@@ -4,7 +4,7 @@
 
 Chat naturally with your orchestrator about what needs to be done. It uses the built-in [orchestrator skill](./skill/SKILL.md) to understand your intent and automatically dispatches specialized agents in parallel. You stay in control while the orchestrator handles the logistics.
 
-Need to jump in? Use tmux session or window switchers to fuzzy-find and instantly attach to any running worker. Dedicated session workers give you a full expandable workspace, while lightweight review workers can stay as a single window in the parent tmux session until you promote them.
+Need to jump in? Use tmux session or window switchers to fuzzy-find and instantly attach to any running worker. Dedicated session workers give you a full expandable workspace, while lightweight workers can stay as a single window in the parent tmux session until you promote them.
 
 > **Note:** Currently supports **local workflow only** (WorkTrunk + tmux + local agent CLIs such as pi, opencode, claude, or codex). Cloud sandbox support (Daytona, etc.) is planned for future releases.
 
@@ -18,7 +18,7 @@ You (in orchestrator session)
 ├─ "Fix login bug #456"     →  Orchestrator uses wtmag skill
 │                               └─ wtmag create --github 456 -t issue
 │                                  ├─ Creates: github-issue-456 worktree
-│                                  ├─ Starts: dedicated tmux session blog-github-issue-456
+│                                  ├─ Starts: worker window in the current tmux session
 │                                  └─ Spawns: default agent with issue context
 │
 └─ "Review PR #234"         →  Orchestrator spawns another agent
@@ -60,7 +60,7 @@ Result: Multiple isolated worktrees + tmux workers + running agents
    
    **Recommended:** Use [tmux-sessionx](https://github.com/omerxx/tmux-sessionx) to fuzzy-find and switch:
    ```bash
-   # Press prefix + f, fuzzy find "blog-github-issue-456" or the parent session that holds a review window
+   # Press prefix + f, fuzzy find "blog-github-issue-456" or the parent session that holds a worker window
    ```
    
    *Alternative:* You can use any tmux session manager, or attach directly:
@@ -128,8 +128,9 @@ wtmag cleanup --id blog-github-issue-456 --force
 
 Placement rules:
 
-- implementation work defaults to a dedicated tmux session
-- review work defaults to a worker window in the current tmux session
+- generated config defaults both implementation work and review work to a worker window in the current tmux session
+- configure `[launch] implementation = "session"` and `review = "session"` in `wtmag.toml` or `~/.config/wtmag/config.toml` to change those defaults
+- with the generated `window` defaults, run `wtmag create` inside tmux or override the run to `session`
 - `-s` / `--launch session` forces a dedicated session
 - `-w` / `--launch window` forces a parent-session window and requires running inside tmux
 - `wtmag promote --id ...` upgrades a window worker into its own dedicated session
@@ -138,7 +139,15 @@ Placement rules:
 
 wtmag creates `~/.config/wtmag/config.toml` on first run if it does not exist. That generated file includes the default agent selection plus the bundled agent definitions, so you can edit how `pi`, `opencode`, `claude`, and `codex` launch without touching code.
 
-When `--agent` is omitted, wtmag uses `agents.default.name` from `~/.config/wtmag/config.toml`. Freshly generated configs default that to `pi`.
+When `--agent` is omitted, wtmag resolves `agents.default.name` with this precedence:
+
+- `--agent` CLI flag
+- project `wtmag.toml`
+- global `~/.config/wtmag/config.toml`
+
+Freshly generated global configs default to `pi`.
+
+Launch defaults use the same config precedence. When no CLI launch override is provided, wtmag resolves `[launch] implementation` and `[launch] review` from project `wtmag.toml` first, then global `~/.config/wtmag/config.toml`.
 
 | Agent | Command | Prompt delivery | Notes |
 |-------|---------|-----------------|-------|
@@ -174,7 +183,7 @@ Example `pi` config:
 
 ### Adding Custom Agents
 
-You can edit the generated config or create it ahead of time yourself. The shipped template is `config.example.toml`, and wtmag copies it to `~/.config/wtmag/config.toml` on first run when that file is missing:
+You can edit the generated global config or create it ahead of time yourself. The shipped template is `config.example.toml`, and wtmag copies it to `~/.config/wtmag/config.toml` on first run when that file is missing:
 
 ```toml
 # WTmag writes this template to ~/.config/wtmag/config.toml on first run if the file does not exist.
@@ -183,6 +192,11 @@ You can edit the generated config or create it ahead of time yourself. The shipp
 [agents.default]
 # Use one of the built-in agent names below, or whatever comes after `agents.` in a custom agent definition.
 name = "pi"
+
+# Default launch placement when no CLI launch override is provided.
+[launch]
+implementation = "window"
+review = "window"
 
 # Built-in agent definitions.
 [agents.pi]
@@ -214,6 +228,8 @@ prompt_flag = ""
 
 Set `agents.default.name` to any agent table name in the config. That can be one of the generated built-ins (`pi`, `opencode`, `claude`, `codex`) or a custom `[agents.<name>]` block you add yourself. `--agent` still overrides the config for a single run.
 
+To override config for one repository or worktree, add a `wtmag.toml` file at the project root using the same schema. Project config is layered on top of the global home config, so any supported config table can be overridden there and you only need to include the tables you want to change. If you redefine an existing `[agents.<name>]` block, include the full block for that agent.
+
 Then use it: `wtmag create --github 456 -t issue --agent aider`
 
 **Why `prompt_flag` matters:** wtmag writes the full brief to `.wtmag/prompt.md`, then passes a bootstrap prompt that tells the agent to read that file. The `prompt_flag` tells wtmag how to send that bootstrap prompt:
@@ -230,7 +246,7 @@ This works for both built-in prompts (from issues/PRs) and custom prompts via `-
 1. **Fetches issue/PR/ticket** via GitHub/Jira CLI → extracts title + description
 2. **Resolves the worker branch target** → for example `github-issue-456` for issue work, or a provider-specific review branch for PR work
 3. **Creates or switches the worktree** via `wt switch`
-4. **Starts tmux worker** → a dedicated session or a parent-session window, depending on work mode and launch flags
+4. **Starts tmux worker** → a dedicated session or a parent-session window, depending on config and launch flags
 5. **Writes `.wtmag/prompt.md`** in the worktree with the full task brief
 6. **Spawns agent** → Your choice of AI agent (pi, opencode, claude, codex, or custom) with a bootstrap prompt
 7. **Promotes** a lightweight window worker into a dedicated session on `promote`
@@ -244,7 +260,7 @@ Each agent worker runs in **tmux** (not headless) so you can:
 - **Create new windows** for dedicated session workers when a task grows beyond a single window
 - **Multiple panes** - agent in one, logs in another, tests in a third
 
-Review workers can stay lightweight as a single parent-session window by default, then be promoted into a dedicated session when they need to grow.
+Workers can stay lightweight as a single parent-session window by default, then be promoted into a dedicated session when they need to grow.
 
 ## Architecture
 
@@ -260,7 +276,7 @@ Review workers can stay lightweight as a single parent-session window by default
 ┌──────────────────────────────────┐
 │ blog-github-issue-456            │
 │ ├─ Worktree: ./github-issue-456  │
-│ ├─ Tmux: dedicated session       │
+│ ├─ Tmux: parent-session window   │
 │ └─ Agent: claude (or pi,         │
 │            opencode, codex,      │
 │            or custom)            │
@@ -272,10 +288,10 @@ Review workers can stay lightweight as a single parent-session window by default
 ## Commands
 
 - `create --github <num> -t <type>` - Spawn agent from GitHub issue/PR (type: issue, pr)
-- `create ... --launch <session|window>` / `-s` / `-w` - Control tmux placement explicitly
 - `create --jira <id>` - Spawn agent from Jira ticket
 - `create --prompt "text"` - Spawn agent from custom prompt
-- `create ... --agent <name>` - Use specific AI agent (otherwise wtmag uses config `agents.default.name` or `pi`)
+- `create ... --agent <name>` - Use specific AI agent (otherwise wtmag uses project `wtmag.toml`, then global config `agents.default.name`, then the generated global default of `pi`)
+- `create ... --launch <session|window>` / `-s` / `-w` - Override project/global `[launch]` defaults for a single run
 - `create ... --prompt "custom"` - Override default prompt with custom instructions
 - `list` / `list --all` - Show known workers and whether they are running or stopped
 - `attach <id>` - Attach to the worker's tmux session or parent-session window
