@@ -38,6 +38,7 @@ You are the orchestrator running in the main tmux session.
 - Tell the human how to attach if they want to inspect or intervene
 - Let wtmag use its configured default agent when the user does not specify one
 - Only use `--agent <name>` if the user explicitly asks for a different agent or wants to override config
+- Only use `--model <provider/model[:thinking]>` if the user explicitly asks for a specific model or thinking level
 - Never recommend or install a different agent on your own
 - Let wtmag use its default placement unless the user explicitly asks for `-s`, `-w`, or `--launch`
 - Generated config defaults both implementation work and review work to a worker window in the current tmux session
@@ -58,12 +59,23 @@ Built-in prompt delivery:
 - `pi`, `claude`, and `codex` use positional prompts
 - `opencode` uses `--prompt`
 
+Model override format:
+
+- use `--model provider/model[:thinking]` when the user explicitly asks for a model override
+- wtmag currently translates `--model` for `pi` and `opencode`
+- recognized thinking levels are `off`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`
+- `pi` receives `--model provider/model[:thinking]`
+- `opencode` receives `--model provider/model` and maps `:thinking` to `--variant`
+- if the selected agent does not support wtmag model overrides, say so instead of guessing provider-specific flags
+
 Examples:
 
 - default: `wtmag create --github 456 -t issue`
 - user explicitly asks for OpenCode: `wtmag create --github 456 -t issue --agent opencode`
 - user explicitly asks for Claude: `wtmag create --github 456 -t issue --agent claude`
 - user explicitly asks for Codex: `wtmag create --github 456 -t issue --agent codex`
+- user explicitly asks for GPT 5.2 high thinking on OpenCode: `wtmag create --github 456 -t issue --agent opencode --model openai/gpt-5.2:high`
+- user explicitly asks for Claude Sonnet high thinking on Pi: `wtmag create --github 456 -t issue --agent pi --model anthropic/claude-sonnet-4.5:high`
 
 ## What the worker is supposed to do
 
@@ -143,6 +155,12 @@ wtmag create --github 456 -t issue --prompt "Start by writing tests"
 wtmag create --github 456 -t issue --agent claude
 ```
 
+### Use a specific model only when requested
+
+```bash
+wtmag create --github 456 -t issue --agent opencode --model openai/gpt-5.2:high
+```
+
 ### Worker management
 
 ```bash
@@ -160,6 +178,8 @@ wtmag cleanup --id project-github-issue-456 --force
 - Jira does not use `-t`
 - `--prompt` by itself means a custom prompt task
 - `--prompt` with `--github` or `--jira` means "keep the source context and add these instructions"
+- `--model` uses `provider/model[:thinking]` format and is intended for explicit per-run model overrides
+- wtmag currently supports `--model` overrides for `pi` and `opencode`
 - generated config defaults both `review` and `implement` work to `window` placement
 - `-s` / `--launch session` forces a dedicated tmux session
 - `-w` / `--launch window` forces a worker window in the current tmux session

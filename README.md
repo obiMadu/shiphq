@@ -117,6 +117,10 @@ wtmag create --github 456 -t issue --agent opencode
 wtmag create --github 456 -t issue --agent claude
 wtmag create --github 456 -t issue --agent codex
 
+# Override the agent model for a single worker
+wtmag create --github 456 -t issue --agent opencode --model openai/gpt-5.2:high
+wtmag create --github 456 -t issue --agent pi --model anthropic/claude-sonnet-4.5:max
+
 # Manage workers
 wtmag list                                     # Show known workers for current project
 wtmag list --all                               # Show known workers across projects
@@ -157,6 +161,14 @@ Launch defaults use the same config precedence. When no CLI launch override is p
 | **codex** | `codex` | positional | Codex CLI by OpenAI |
 
 All agents spawn in interactive mode (TUI) so you can jump in and collaborate. wtmag writes the full task brief to `.wtmag/prompt.md` in the worktree, ignores `/.wtmag/` via the worktree-local Git exclude, then sends a small bootstrap instruction using the agent's configured prompt delivery style.
+
+Model overrides use `--model provider/model[:thinking]`.
+
+- wtmag currently translates `--model` for `pi` and `opencode`
+- recognized thinking levels are `off`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`
+- `pi` receives `--model provider/model[:thinking]`
+- `opencode` receives `--model provider/model` and maps `:thinking` to `--variant`
+- if you pass `--model` to an unsupported agent command, wtmag fails instead of guessing flags
 
 ### Agent Authentication
 
@@ -291,6 +303,7 @@ Workers can stay lightweight as a single parent-session window by default, then 
 - `create --jira <id>` - Spawn agent from Jira ticket
 - `create --prompt "text"` - Spawn agent from custom prompt
 - `create ... --agent <name>` - Use specific AI agent (otherwise wtmag uses project `wtmag.toml`, then global config `agents.default.name`, then the generated global default of `pi`)
+- `create ... --model <provider/model[:thinking]>` - Override the spawned agent model for a single run (`pi` and `opencode` only right now)
 - `create ... --launch <session|window>` / `-s` / `-w` - Override project/global `[launch]` defaults for a single run
 - `create ... --prompt "custom"` - Override default prompt with custom instructions
 - `list` / `list --all` - Show known workers and whether they are running or stopped

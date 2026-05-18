@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/obiMadu/wtmag/internal/agent"
+	agentmodel "github.com/obiMadu/wtmag/internal/agent/model"
 	createinput "github.com/obiMadu/wtmag/internal/cli"
 	"github.com/obiMadu/wtmag/internal/config"
 	promptbuilder "github.com/obiMadu/wtmag/internal/prompt"
@@ -28,6 +29,7 @@ var (
 	typeFlag          string
 	launchFlag        string
 	agentFlag         string
+	modelFlag         string
 	cleanupIDFlag     string
 	promoteIDFlag     string
 	sessionLaunchFlag bool
@@ -84,6 +86,7 @@ func init() {
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
 	createCmd.Flags().StringVar(&launchFlag, "launch", "", "Launch worker in `session` or `window` mode")
 	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to agents.default.name from wtmag.toml or ~/.config/wtmag/config.toml)")
+	createCmd.Flags().StringVar(&modelFlag, "model", "", "Model override in `provider/model[:thinking]` format (translated per agent CLI)")
 	createCmd.Flags().BoolVarP(&sessionLaunchFlag, "session", "s", false, "Launch worker in a dedicated tmux session")
 	createCmd.Flags().BoolVarP(&windowLaunchFlag, "window", "w", false, "Launch worker in the current tmux session as a window")
 	listCmd.Flags().BoolVar(&allFlag, "all", false, "List workers across all projects")
@@ -147,8 +150,13 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	selectedModel, err := agentmodel.ParseSelection(modelFlag)
+	if err != nil {
+		return err
+	}
+
 	localRuntime := runtime.LocalRuntime{}
-	workerSession, err := localRuntime.Create(project, workItem, workerPrompt, selectedAgent, placementKind)
+	workerSession, err := localRuntime.Create(project, workItem, workerPrompt, selectedAgent, selectedModel, placementKind)
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	agentmodel "github.com/obiMadu/wtmag/internal/agent/model"
 	"github.com/obiMadu/wtmag/internal/config"
 )
 
@@ -15,16 +16,25 @@ type Agent struct {
 }
 
 // BuildCommand builds a shell-safe command string for tmux.
-func (a Agent) BuildCommand(prompt string) string {
+func (a Agent) BuildCommand(prompt string, modelSelection *agentmodel.Selection) (string, error) {
 	parts := []string{shellQuote(a.Command)}
 	for _, arg := range a.Args {
 		parts = append(parts, shellQuote(arg))
 	}
+
+	modelArgs, err := agentmodel.CommandArgs(a.Command, modelSelection)
+	if err != nil {
+		return "", err
+	}
+	for _, arg := range modelArgs {
+		parts = append(parts, shellQuote(arg))
+	}
+
 	if a.PromptFlag != "" {
 		parts = append(parts, shellQuote(a.PromptFlag))
 	}
 	parts = append(parts, shellQuote(prompt))
-	return strings.Join(parts, " ")
+	return strings.Join(parts, " "), nil
 }
 
 func shellQuote(value string) string {

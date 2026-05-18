@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/obiMadu/wtmag/internal/agent"
+	agentmodel "github.com/obiMadu/wtmag/internal/agent/model"
 	"github.com/obiMadu/wtmag/internal/session"
 	"github.com/obiMadu/wtmag/internal/workitem"
 )
@@ -29,7 +30,7 @@ const (
 	workerPromptExcludePattern = "/.wtmag/"
 )
 
-func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string, placementKind session.PlacementKind) (Session, error) {
+func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string, modelSelection *agentmodel.Selection, placementKind session.PlacementKind) (Session, error) {
 	sessionLabel, err := generateBranchName(workItem)
 	if err != nil {
 		return Session{}, err
@@ -101,7 +102,10 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 	}
 
 	bootstrapPrompt := buildBootstrapPrompt(workerPromptRelativePath)
-	agentCommand := configuredAgent.BuildCommand(bootstrapPrompt)
+	agentCommand, err := configuredAgent.BuildCommand(bootstrapPrompt, modelSelection)
+	if err != nil {
+		return Session{}, withCreateRollback(fmt.Errorf("failed to build agent command: %w", err), metadata)
+	}
 	sessionCommand, err := buildSessionCommand(agentCommand)
 	if err != nil {
 		return Session{}, withCreateRollback(fmt.Errorf("failed to build session shell command: %w", err), metadata)
