@@ -39,6 +39,7 @@ You are the orchestrator running in the main tmux session.
 - Let wtmag use its configured default agent when the user does not specify one
 - Only use `--agent <name>` if the user explicitly asks for a different agent or wants to override config
 - Only use `--model <provider/model[:thinking]>` if the user explicitly asks for a specific model or thinking level
+- Before using `--model`, inspect the selected agent's local CLI help and treat that local output as the source of truth
 - Never recommend or install a different agent on your own
 - Let wtmag use its default placement unless the user explicitly asks for `-s`, `-w`, or `--launch`
 - Generated config defaults both implementation work and review work to a worker window in the current tmux session
@@ -67,6 +68,18 @@ Model override format:
 - `pi` receives `--model provider/model[:thinking]`
 - `opencode` receives `--model provider/model` and maps `:thinking` to `--variant`
 - if the selected agent does not support wtmag model overrides, say so instead of guessing provider-specific flags
+
+Local CLI verification for model overrides:
+
+- before using `--model`, inspect the locally installed agent CLI help so you are not relying only on this static skill text
+- use the local CLI help output as the source of truth if it differs from the notes above
+- after verification, still call `wtmag create ... --model provider/model[:thinking]`; do not bypass wtmag by passing provider-specific model flags directly
+- current verification commands:
+  - `pi --help`
+  - `opencode --help`
+  - `opencode run --help`
+  - `opencode models --help`
+- add future agents to this list as wtmag model override support expands
 
 Examples:
 
