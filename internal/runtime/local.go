@@ -21,6 +21,15 @@ type Session struct {
 	Placement session.PlacementKind
 }
 
+type LogOptions struct {
+	Path     string
+	MaxBytes int64
+}
+
+func (logOptions LogOptions) Enabled() bool {
+	return strings.TrimSpace(logOptions.Path) != ""
+}
+
 type LocalRuntime struct{}
 
 const (
@@ -30,7 +39,7 @@ const (
 	workerPromptExcludePattern = "/.wtmag/"
 )
 
-func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string, modelSelection *agentmodel.Selection, placementKind session.PlacementKind) (Session, error) {
+func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkItem, workerPrompt, agentName string, modelSelection *agentmodel.Selection, placementKind session.PlacementKind, logOptions LogOptions) (Session, error) {
 	sessionLabel, err := generateBranchName(workItem)
 	if err != nil {
 		return Session{}, err
@@ -119,7 +128,17 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 	metadata.TmuxSessionName = launchInfo.SessionName
 	metadata.TmuxWindowID = launchInfo.WindowID
 	metadata.TmuxWindowName = launchInfo.WindowName
+	metadata.TmuxPaneID = launchInfo.PaneID
 	metadata.PlacementKind = launchInfo.PlacementKind
+
+	if logOptions.Enabled() {
+		if err := configureTmuxPaneLogPipe(metadata, logOptions); err != nil {
+			return Session{}, withCreateRollback(fmt.Errorf("failed to configure worker log pipe: %w", err), metadata)
+		}
+
+		metadata.LogPath = logOptions.Path
+		metadata.LogMaxBytes = logOptions.MaxBytes
+	}
 
 	if err := session.Save(metadata); err != nil {
 		return Session{}, withCreateRollback(fmt.Errorf("failed to save session metadata: %w", err), metadata)

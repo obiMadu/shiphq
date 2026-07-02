@@ -31,6 +31,9 @@ type Metadata struct {
 	TmuxSessionName string        `json:"tmux_session_name,omitempty"`
 	TmuxWindowID    string        `json:"tmux_window_id,omitempty"`
 	TmuxWindowName  string        `json:"tmux_window_name,omitempty"`
+	TmuxPaneID      string        `json:"tmux_pane_id,omitempty"`
+	LogPath         string        `json:"log_path,omitempty"`
+	LogMaxBytes     int64         `json:"log_max_bytes,omitempty"`
 }
 
 func (metadata Metadata) EffectivePlacementKind() PlacementKind {
@@ -55,6 +58,10 @@ func (metadata Metadata) EffectiveTmuxSessionTarget() string {
 
 func (metadata Metadata) EffectiveTmuxWindowTarget() string {
 	return strings.TrimSpace(metadata.TmuxWindowID)
+}
+
+func (metadata Metadata) EffectiveTmuxPaneTarget() string {
+	return strings.TrimSpace(metadata.TmuxPaneID)
 }
 
 func Save(metadata Metadata) error {
