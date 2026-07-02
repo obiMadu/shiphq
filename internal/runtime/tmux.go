@@ -1,15 +1,17 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/obiMadu/wtmag/internal/session"
 )
 
-const tmuxLaunchFormat = "#{session_id}\t#{session_name}\t#{window_id}\t#{window_name}"
+const tmuxLaunchFormat = "#{session_id}\t#{session_name}\t#{window_id}\t#{window_name}\t#{pane_id}"
 
 type tmuxLaunchInfo struct {
 	PlacementKind session.PlacementKind
@@ -17,6 +19,7 @@ type tmuxLaunchInfo struct {
 	SessionName   string
 	WindowID      string
 	WindowName    string
+	PaneID        string
 }
 
 type tmuxState struct {
@@ -218,6 +221,98 @@ func attachTmuxWindow(sessionTarget, windowTarget string) error {
 	return runTmuxInteractiveCommand("attach-session", "-t", sessionTarget)
 }
 
+func configureTmuxPaneLogPipe(metadata session.Metadata, logOptions LogOptions) error {
+	if !logOptions.Enabled() {
+		return nil
+	}
+
+	if err := prepareLogDestination(logOptions); err != nil {
+		return err
+	}
+
+	return enableTmuxPanePipe(metadata.EffectiveTmuxPaneTarget(), buildLogPipeCommand(logOptions.Path))
+}
+
+func prepareLogDestination(logOptions LogOptions) error {
+	logPath := strings.TrimSpace(logOptions.Path)
+	if logPath == "" {
+		return fmt.Errorf("log path cannot be empty")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+		return fmt.Errorf("failed to create log directory for %s: %w", logPath, err)
+	}
+
+	if logOptions.MaxBytes > 0 {
+		if err := rotateLogFileIfNeeded(logPath, logOptions.MaxBytes); err != nil {
+			return err
+		}
+	}
+
+	logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to prepare log file %s: %w", logPath, err)
+	}
+
+	return logFile.Close()
+}
+
+func rotateLogFileIfNeeded(logPath string, maxBytes int64) error {
+	logFileInfo, err := os.Stat(logPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to inspect log file %s: %w", logPath, err)
+	}
+	if logFileInfo.IsDir() {
+		return fmt.Errorf("log path %s is a directory", logPath)
+	}
+	if logFileInfo.Size() < maxBytes {
+		return nil
+	}
+
+	rotatedPath := logPath + ".1"
+	if err := os.Rename(logPath, rotatedPath); err != nil {
+		return fmt.Errorf("failed to rotate log file %s to %s: %w", logPath, rotatedPath, err)
+	}
+
+	return nil
+}
+
+func buildLogPipeCommand(logPath string) string {
+	return buildShellCommand("sh", "-c", `cat >> "$1"`, "sh", logPath)
+}
+
+func enableTmuxPanePipe(paneTarget, pipeCommand string) error {
+	if strings.TrimSpace(paneTarget) == "" {
+		return fmt.Errorf("tmux pane target cannot be empty")
+	}
+
+	pipeCommandExec := exec.Command("tmux", "pipe-pane", "-t", paneTarget, pipeCommand)
+	output, err := pipeCommandExec.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tmux pipe-pane failed: %w\n%s", err, output)
+	}
+
+	return nil
+}
+
+func disableTmuxPanePipe(metadata session.Metadata) error {
+	paneTarget := metadata.EffectiveTmuxPaneTarget()
+	if strings.TrimSpace(paneTarget) == "" {
+		return nil
+	}
+
+	pipeCommandExec := exec.Command("tmux", "pipe-pane", "-t", paneTarget)
+	output, err := pipeCommandExec.CombinedOutput()
+	if err == nil || isMissingTmuxPane(output) || isNoTmuxServer(output) {
+		return nil
+	}
+
+	return fmt.Errorf("tmux pipe-pane disable failed: %v\n%s", err, output)
+}
+
 func inspectTmuxState() (tmuxState, error) {
 	listCommand := exec.Command("tmux", "list-windows", "-a", "-F", "#{window_id}\t#{session_id}\t#{session_name}")
 	output, err := listCommand.CombinedOutput()
@@ -269,11 +364,27 @@ func inspectTmuxState() (tmuxState, error) {
 }
 
 func killTmuxPlacement(metadata session.Metadata) error {
-	if metadata.EffectivePlacementKind() == session.PlacementKindWindow {
-		return killTmuxWindow(metadata.EffectiveTmuxWindowTarget())
+	var cleanupErrors []string
+
+	if err := disableTmuxPanePipe(metadata); err != nil {
+		cleanupErrors = append(cleanupErrors, err.Error())
 	}
 
-	return killTmuxSession(metadata.EffectiveTmuxSessionTarget())
+	if metadata.EffectivePlacementKind() == session.PlacementKindWindow {
+		if err := killTmuxWindow(metadata.EffectiveTmuxWindowTarget()); err != nil {
+			cleanupErrors = append(cleanupErrors, err.Error())
+		}
+	} else {
+		if err := killTmuxSession(metadata.EffectiveTmuxSessionTarget()); err != nil {
+			cleanupErrors = append(cleanupErrors, err.Error())
+		}
+	}
+
+	if len(cleanupErrors) == 0 {
+		return nil
+	}
+
+	return errors.New(strings.Join(cleanupErrors, "\n"))
 }
 
 func killTmuxSession(sessionTarget string) error {
@@ -318,8 +429,8 @@ func isInsideTmux() bool {
 
 func parseTmuxLaunchOutput(output []byte) (tmuxLaunchInfo, error) {
 	trimmedOutput := strings.TrimRight(string(output), "\r\n")
-	parts := strings.SplitN(trimmedOutput, "\t", 4)
-	if len(parts) != 4 {
+	parts := strings.SplitN(trimmedOutput, "\t", 5)
+	if len(parts) != 5 {
 		return tmuxLaunchInfo{}, fmt.Errorf("unexpected tmux output: %s", trimmedOutput)
 	}
 
@@ -328,7 +439,12 @@ func parseTmuxLaunchOutput(output []byte) (tmuxLaunchInfo, error) {
 		SessionName: strings.TrimSpace(parts[1]),
 		WindowID:    strings.TrimSpace(parts[2]),
 		WindowName:  strings.TrimSpace(parts[3]),
+		PaneID:      strings.TrimSpace(parts[4]),
 	}, nil
+}
+
+func isMissingTmuxPane(output []byte) bool {
+	return strings.Contains(strings.ToLower(string(output)), "can't find pane")
 }
 
 func isMissingTmuxWindow(output []byte) bool {

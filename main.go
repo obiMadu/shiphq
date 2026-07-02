@@ -28,8 +28,10 @@ var (
 	projectFlag       string
 	typeFlag          string
 	launchFlag        string
+	logFlag           string
 	agentFlag         string
 	modelFlag         string
+	logMaxBytesFlag   int64
 	cleanupIDFlag     string
 	promoteIDFlag     string
 	sessionLaunchFlag bool
@@ -85,6 +87,8 @@ func init() {
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
 	createCmd.Flags().StringVar(&launchFlag, "launch", "", "Launch worker in `session` or `window` mode")
+	createCmd.Flags().StringVar(&logFlag, "log", "", "Stream worker pane output to a log file via tmux pipe-pane")
+	createCmd.Flags().Int64Var(&logMaxBytesFlag, "log-max-bytes", 0, "Rotate an existing log to <path>.1 before launch when it is already at or above this size")
 	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to agents.default.name from wtmag.toml or ~/.config/wtmag/config.toml)")
 	createCmd.Flags().StringVar(&modelFlag, "model", "", "Model override in `provider/model[:thinking]` format (translated per agent CLI)")
 	createCmd.Flags().BoolVarP(&sessionLaunchFlag, "session", "s", false, "Launch worker in a dedicated tmux session")
@@ -137,6 +141,11 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		workerPrompt = promptbuilder.BuildOverride(workItem, repositoryTarget, createInput.PromptOverride)
 	}
 
+	logOptions, err := resolveLogOptions()
+	if err != nil {
+		return err
+	}
+
 	placementKind, err := resolveLaunchPlacement(workItem)
 	if err != nil {
 		return err
@@ -156,7 +165,7 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 	}
 
 	localRuntime := runtime.LocalRuntime{}
-	workerSession, err := localRuntime.Create(project, workItem, workerPrompt, selectedAgent, selectedModel, placementKind)
+	workerSession, err := localRuntime.Create(project, workItem, workerPrompt, selectedAgent, selectedModel, placementKind, logOptions)
 	if err != nil {
 		return err
 	}
@@ -322,4 +331,29 @@ func resolveLaunchPlacement(workItem workitem.WorkItem) (session.PlacementKind, 
 	default:
 		return "", fmt.Errorf("invalid launch default %q for %s work in %s (use 'session' or 'window')", configuredLaunch, workItem.Mode, config.LookupDescription())
 	}
+}
+
+func resolveLogOptions() (runtime.LogOptions, error) {
+	if logMaxBytesFlag < 0 {
+		return runtime.LogOptions{}, fmt.Errorf("--log-max-bytes must be zero or greater")
+	}
+
+	trimmedLogPath := strings.TrimSpace(logFlag)
+	if trimmedLogPath == "" {
+		if logMaxBytesFlag > 0 {
+			return runtime.LogOptions{}, fmt.Errorf("--log-max-bytes requires --log")
+		}
+
+		return runtime.LogOptions{}, nil
+	}
+
+	absLogPath, err := filepath.Abs(trimmedLogPath)
+	if err != nil {
+		return runtime.LogOptions{}, fmt.Errorf("failed to resolve log path %s: %w", trimmedLogPath, err)
+	}
+
+	return runtime.LogOptions{
+		Path:     absLogPath,
+		MaxBytes: logMaxBytesFlag,
+	}, nil
 }

@@ -121,6 +121,10 @@ wtmag create --github 456 -t issue --agent codex
 wtmag create --github 456 -t issue --agent opencode --model openai/gpt-5.2:high
 wtmag create --github 456 -t issue --agent pi --model anthropic/claude-sonnet-4.5:max
 
+# Stream worker output to a log file
+wtmag create --github 456 -t issue --log /tmp/wtmag/worker.log
+wtmag create --github 456 -t issue --log /tmp/wtmag/worker.log --log-max-bytes 10485760
+
 # Manage workers
 wtmag list                                     # Show known workers for current project
 wtmag list --all                               # Show known workers across projects
@@ -305,6 +309,8 @@ Workers can stay lightweight as a single parent-session window by default, then 
 - `create ... --agent <name>` - Use specific AI agent (otherwise wtmag uses project `wtmag.toml`, then global config `agents.default.name`, then the generated global default of `pi`)
 - `create ... --model <provider/model[:thinking]>` - Override the spawned agent model for a single run (`pi` and `opencode` only right now)
 - `create ... --launch <session|window>` / `-s` / `-w` - Override project/global `[launch]` defaults for a single run
+- `create ... --log <path>` - Stream pane output into a file with `tmux pipe-pane`
+- `create ... --log-max-bytes <bytes>` - When used with `--log`, rotate an existing oversized file to `<path>.1` before launch
 - `create ... --prompt "custom"` - Override default prompt with custom instructions
 - `list` / `list --all` - Show known workers and whether they are running or stopped
 - `attach <id>` - Attach to the worker's tmux session or parent-session window
