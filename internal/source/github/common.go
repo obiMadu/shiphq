@@ -16,39 +16,31 @@ type viewPayload struct {
 	HeadRefName string `json:"headRefName"`
 }
 
-func fetchWithGitHubCLI(commandName string, sourceRef workitem.SourceRef, workMode workitem.WorkMode) (workitem.WorkItem, error) {
-	if strings.TrimSpace(sourceRef.Reference) == "" {
-		return workitem.WorkItem{}, fmt.Errorf("GitHub %s reference cannot be empty", sourceRef.Kind)
-	}
-
-	fields := []string{"title", "body", "url"}
-	if commandName == "pr" {
-		fields = append(fields, "headRefName")
-	}
-
-	command := exec.Command("gh", commandName, "view", sourceRef.Reference, "--json", strings.Join(fields, ","))
-	output, err := command.CombinedOutput()
+func runView(sourceRef workitem.SourceRef, args []string) (viewPayload, error) {
+	output, err := exec.Command("gh", args...).CombinedOutput()
 	if err != nil {
-		return workitem.WorkItem{}, fmt.Errorf("failed to fetch GitHub %s %s: %w\n%s", sourceRef.Kind, sourceRef.Reference, err, output)
+		return viewPayload{}, fmt.Errorf("failed to fetch GitHub %s %s: %w\n%s", sourceRef.Kind, sourceRef.Reference, err, output)
 	}
 
 	var payload viewPayload
 	if err := json.Unmarshal(output, &payload); err != nil {
-		return workitem.WorkItem{}, fmt.Errorf("failed to decode GitHub %s %s: %w", sourceRef.Kind, sourceRef.Reference, err)
+		return viewPayload{}, fmt.Errorf("failed to decode GitHub %s %s: %w", sourceRef.Kind, sourceRef.Reference, err)
 	}
 
+	return payload, nil
+}
+
+func baseWorkItem(sourceRef workitem.SourceRef, payload viewPayload) (workitem.WorkItem, error) {
 	identifier := workitem.NormalizeIdentifier(sourceRef.Reference)
 	if identifier == "" {
 		return workitem.WorkItem{}, fmt.Errorf("invalid GitHub %s reference: %s", sourceRef.Kind, sourceRef.Reference)
 	}
 
 	return workitem.WorkItem{
-		Mode:         workMode,
-		Source:       sourceRef,
-		Identifier:   identifier,
-		TargetBranch: strings.TrimSpace(payload.HeadRefName),
-		Title:        strings.TrimSpace(payload.Title),
-		Description:  strings.TrimSpace(payload.Body),
-		URL:          strings.TrimSpace(payload.URL),
+		Source:      sourceRef,
+		Identifier:  identifier,
+		Title:       strings.TrimSpace(payload.Title),
+		Description: strings.TrimSpace(payload.Body),
+		URL:         strings.TrimSpace(payload.URL),
 	}, nil
 }
