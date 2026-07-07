@@ -11,7 +11,7 @@ import (
 type ticketProvider struct{}
 
 func init() {
-	source.Register("jira", "ticket", ticketProvider{})
+	source.Register("jira", "ticket", workitem.ModeImplement, ticketProvider{})
 }
 
 func (ticketProvider) Fetch(sourceRef workitem.SourceRef) (workitem.WorkItem, error) {
@@ -21,7 +21,6 @@ func (ticketProvider) Fetch(sourceRef workitem.SourceRef) (workitem.WorkItem, er
 	}
 
 	return workitem.WorkItem{
-		Mode:       workitem.ModeImplement,
 		Source:     sourceRef,
 		Identifier: identifier,
 		Title:      strings.TrimSpace(sourceRef.Reference),

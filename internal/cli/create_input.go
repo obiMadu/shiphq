@@ -5,12 +5,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/obiMadu/wtmag/internal/source"
 	"github.com/obiMadu/wtmag/internal/workitem"
 )
 
 type CreateInput struct {
 	SourceRef      workitem.SourceRef
 	PromptOverride string
+	Mode           workitem.WorkMode
 }
 
 func ResolveCreateInput(githubNumber int, jiraTicketID, promptText, typeFlag string) (CreateInput, error) {
@@ -18,73 +20,82 @@ func ResolveCreateInput(githubNumber int, jiraTicketID, promptText, typeFlag str
 	trimmedPromptText := strings.TrimSpace(promptText)
 	trimmedType := strings.TrimSpace(typeFlag)
 
-	hasGitHubSource := githubNumber != 0
-	hasJiraSource := trimmedJiraTicketID != ""
-	hasPromptSource := trimmedPromptText != "" && !hasGitHubSource && !hasJiraSource
-
-	sourceCount := 0
-	if hasGitHubSource {
-		sourceCount++
-	}
-	if hasJiraSource {
-		sourceCount++
-	}
-	if hasPromptSource {
-		sourceCount++
+	type sourceSelection struct {
+		system    string
+		reference string
 	}
 
-	if sourceCount == 0 {
-		return CreateInput{}, fmt.Errorf("must specify --github, --jira, or --prompt")
-	}
-	if sourceCount > 1 {
-		return CreateInput{}, fmt.Errorf("must specify only one source: --github, --jira, or --prompt")
-	}
-
-	if hasGitHubSource {
+	var selected []sourceSelection
+	if githubNumber != 0 {
 		if githubNumber < 0 {
 			return CreateInput{}, fmt.Errorf("--github must be a positive number")
 		}
-		if trimmedType == "" {
-			return CreateInput{}, fmt.Errorf("--type (-t) is required for GitHub (use 'issue' or 'pr')")
-		}
-		if trimmedType != "issue" && trimmedType != "pr" {
-			return CreateInput{}, fmt.Errorf("unknown type '%s' for GitHub (use 'issue' or 'pr')", trimmedType)
-		}
-
-		return CreateInput{
-			SourceRef: workitem.SourceRef{
-				System:    "github",
-				Kind:      trimmedType,
-				Reference: strconv.Itoa(githubNumber),
-			},
-			PromptOverride: trimmedPromptText,
-		}, nil
+		selected = append(selected, sourceSelection{"github", strconv.Itoa(githubNumber)})
+	}
+	if trimmedJiraTicketID != "" {
+		selected = append(selected, sourceSelection{"jira", trimmedJiraTicketID})
+	}
+	if trimmedPromptText != "" && len(selected) == 0 {
+		selected = append(selected, sourceSelection{"prompt", trimmedPromptText})
 	}
 
-	if hasJiraSource {
+	if len(selected) == 0 {
+		return CreateInput{}, fmt.Errorf("must specify --github, --jira, or --prompt")
+	}
+	if len(selected) > 1 {
+		return CreateInput{}, fmt.Errorf("must specify only one source: --github, --jira, or --prompt")
+	}
+
+	choice := selected[0]
+	promptOverride := ""
+	if choice.system != "prompt" {
+		promptOverride = trimmedPromptText
+	}
+
+	kinds := source.KindsFor(choice.system)
+	if len(kinds) == 0 {
+		return CreateInput{}, fmt.Errorf("unsupported source: %s", choice.system)
+	}
+
+	if len(kinds) == 1 {
 		if trimmedType != "" {
-			return CreateInput{}, fmt.Errorf("--type is not used with --jira")
+			return CreateInput{}, fmt.Errorf("--type is not used with --%s", choice.system)
 		}
-
 		return CreateInput{
-			SourceRef: workitem.SourceRef{
-				System:    "jira",
-				Kind:      "ticket",
-				Reference: trimmedJiraTicketID,
-			},
-			PromptOverride: trimmedPromptText,
+			SourceRef:      workitem.SourceRef{System: choice.system, Kind: kinds[0].Kind, Reference: choice.reference},
+			PromptOverride: promptOverride,
+			Mode:           kinds[0].Mode,
 		}, nil
 	}
 
-	if trimmedType != "" {
-		return CreateInput{}, fmt.Errorf("--type can only be used with --github")
+	if trimmedType == "" {
+		return CreateInput{}, fmt.Errorf("--type (-t) is required for %s (use %s)", choice.system, formatValidKinds(kinds))
+	}
+
+	var matched source.Entry
+	found := false
+	for _, k := range kinds {
+		if k.Kind == trimmedType {
+			matched = k
+			found = true
+			break
+		}
+	}
+	if !found {
+		return CreateInput{}, fmt.Errorf("unknown type '%s' for %s (use %s)", trimmedType, choice.system, formatValidKinds(kinds))
 	}
 
 	return CreateInput{
-		SourceRef: workitem.SourceRef{
-			System:    "prompt",
-			Kind:      "prompt",
-			Reference: trimmedPromptText,
-		},
+		SourceRef:      workitem.SourceRef{System: choice.system, Kind: matched.Kind, Reference: choice.reference},
+		PromptOverride: promptOverride,
+		Mode:           matched.Mode,
 	}, nil
+}
+
+func formatValidKinds(kinds []source.Entry) string {
+	quoted := make([]string, len(kinds))
+	for i, k := range kinds {
+		quoted[i] = "'" + k.Kind + "'"
+	}
+	return strings.Join(quoted, " or ")
 }

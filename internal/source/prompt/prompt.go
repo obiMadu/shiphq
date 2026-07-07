@@ -11,7 +11,7 @@ import (
 type taskPromptProvider struct{}
 
 func init() {
-	source.Register("prompt", "prompt", taskPromptProvider{})
+	source.Register("prompt", "prompt", workitem.ModeImplement, taskPromptProvider{})
 }
 
 func (taskPromptProvider) Fetch(sourceRef workitem.SourceRef) (workitem.WorkItem, error) {
@@ -26,7 +26,6 @@ func (taskPromptProvider) Fetch(sourceRef workitem.SourceRef) (workitem.WorkItem
 	}
 
 	return workitem.WorkItem{
-		Mode:        workitem.ModeImplement,
 		Source:      sourceRef,
 		Identifier:  identifier,
 		Title:       promptText,

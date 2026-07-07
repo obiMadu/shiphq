@@ -127,6 +127,8 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	workItem.Mode = createInput.Mode
+
 	repositoryTarget, err := repository.DetectTarget()
 	if err != nil {
 		return err
