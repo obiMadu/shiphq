@@ -1,6 +1,6 @@
 # wtmag
 
-**Local agent orchestration** that enables you and your **orchestrator AI agent** to spawn parallel worker agents from GitHub issues, PRs, Jira tickets, or custom prompts—each running in isolated Git worktrees + tmux workers (dedicated sessions or parent-session windows).
+**Local agent orchestration** that enables you and your **orchestrator AI agent** to spawn parallel worker agents from GitHub issues, PRs, OpenSpec changes, or custom prompts—each running in isolated Git worktrees + tmux workers (dedicated sessions or parent-session windows).
 
 Chat naturally with your orchestrator about what needs to be done. It uses the built-in [orchestrator skill](./skill/SKILL.md) to understand your intent and automatically dispatches specialized agents in parallel. You stay in control while the orchestrator handles the logistics.
 
@@ -86,7 +86,6 @@ Result: Multiple isolated worktrees + tmux workers + running agents
 | └─ [codex](https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started) | Codex CLI by OpenAI | [Install](https://help.openai.com/en/articles/11096431-openai-codex-cli-getting-started) |
 | [GitHub CLI](https://cli.github.com/) | Fetch GitHub issues | [Install](https://github.com/cli/cli#installation) · [Manual](https://cli.github.com/manual/) |
 | [tmux-sessionx](https://github.com/omerxx/tmux-sessionx) | Fuzzy find tmux sessions | [GitHub](https://github.com/omerxx/tmux-sessionx) |
-| Jira CLI (optional) | Fetch Jira tickets | [Install](https://github.com/ankitpokhrel/jira-cli) |
 
 ## Installation
 
@@ -103,8 +102,8 @@ wtmag create --github 456 -t issue -w       # Force parent-session window
 wtmag create --github 456 -t pr             # Review opens a window by default
 wtmag create --github 456 -t pr -s          # Force dedicated session for review
 
-# Create agent from Jira ticket
-wtmag create --jira PROJ-123  
+# Create agent from OpenSpec change (cuts the change files into the worktree)
+wtmag create --opsx add-user-auth
 
 # Create agent from custom prompt
 wtmag create --prompt "Custom task"
@@ -258,7 +257,7 @@ This works for both built-in prompts (from issues/PRs) and custom prompts via `-
 
 ## What wtmag Does
 
-1. **Fetches issue/PR/ticket** via GitHub/Jira CLI → extracts title + description
+1. **Fetches issue/PR/change/prompt** via GitHub CLI or OpenSpec change directory → extracts title + description
 2. **Resolves the worker branch target** → for example `github-issue-456` for issue work, or a provider-specific review branch for PR work
 3. **Creates or switches the worktree** via `wt switch`
 4. **Starts tmux worker** → a dedicated session or a parent-session window, depending on config and launch flags
@@ -340,7 +339,7 @@ PR template (`pr`) receives:
 ## Commands
 
 - `create --github <num> -t <type>` - Spawn agent from GitHub issue/PR (type: issue, pr)
-- `create --jira <id>` - Spawn agent from Jira ticket
+- `create --opsx <change-name>` - Spawn agent from an OpenSpec change (moves the change files into the worktree)
 - `create --prompt "text"` - Spawn agent from custom prompt
 - `create ... --agent <name>` - Use specific AI agent (otherwise wtmag uses project `wtmag.toml`, then global config `agents.default.name`, then the generated global default of `pi`)
 - `create ... --model <provider/model[:thinking]>` - Override the spawned agent model for a single run (`pi` and `opencode` only right now)

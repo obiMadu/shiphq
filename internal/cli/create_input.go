@@ -15,8 +15,9 @@ type CreateInput struct {
 	Mode           workitem.WorkMode
 }
 
-func ResolveCreateInput(githubNumber int, promptText, typeFlag string) (CreateInput, error) {
+func ResolveCreateInput(githubNumber int, promptText, opsxChange, typeFlag string) (CreateInput, error) {
 	trimmedPromptText := strings.TrimSpace(promptText)
+	trimmedOpsxChange := strings.TrimSpace(opsxChange)
 	trimmedType := strings.TrimSpace(typeFlag)
 
 	type sourceSelection struct {
@@ -31,15 +32,18 @@ func ResolveCreateInput(githubNumber int, promptText, typeFlag string) (CreateIn
 		}
 		selected = append(selected, sourceSelection{"github", strconv.Itoa(githubNumber)})
 	}
-	if trimmedPromptText != "" && len(selected) == 0 {
+	if trimmedOpsxChange != "" {
+		selected = append(selected, sourceSelection{"opsx", trimmedOpsxChange})
+	}
+	if len(selected) == 0 && trimmedPromptText != "" {
 		selected = append(selected, sourceSelection{"prompt", trimmedPromptText})
 	}
 
 	if len(selected) == 0 {
-		return CreateInput{}, fmt.Errorf("must specify --github or --prompt")
+		return CreateInput{}, fmt.Errorf("must specify --github, --opsx, or --prompt")
 	}
 	if len(selected) > 1 {
-		return CreateInput{}, fmt.Errorf("must specify only one source: --github or --prompt")
+		return CreateInput{}, fmt.Errorf("must specify only one source: --github, --opsx, or --prompt")
 	}
 
 	choice := selected[0]

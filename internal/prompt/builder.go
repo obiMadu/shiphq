@@ -87,6 +87,8 @@ func describeWorkItem(workItem workitem.WorkItem) string {
 		return fmt.Sprintf("GitHub issue #%s", workItem.Source.Reference)
 	case workItem.Source.System == "github" && workItem.Source.Kind == "pr":
 		return fmt.Sprintf("GitHub PR #%s", workItem.Source.Reference)
+	case workItem.Source.System == "opsx" && workItem.Source.Kind == "change":
+		return fmt.Sprintf("OpenSpec change '%s'", workItem.Source.Reference)
 	default:
 		genericLabel := strings.TrimSpace(workItem.Source.System + " " + workItem.Source.Kind)
 		if workItem.Source.Reference == "" {

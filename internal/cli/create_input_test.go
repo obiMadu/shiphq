@@ -19,6 +19,7 @@ func TestMain(m *testing.M) {
 	source.Register("github", "issue", workitem.ModeImplement, fakeProvider{})
 	source.Register("github", "pr", workitem.ModeReview, fakeProvider{})
 	source.Register("prompt", "prompt", workitem.ModeImplement, fakeProvider{})
+	source.Register("opsx", "change", workitem.ModeImplement, fakeProvider{})
 	os.Exit(m.Run())
 }
 
@@ -28,6 +29,7 @@ func TestResolveCreateInput(t *testing.T) {
 			name               string
 			githubNumber       int
 			promptText         string
+			opsxChange         string
 			typeFlag           string
 			wantSystem         string
 			wantKind           string
@@ -35,15 +37,17 @@ func TestResolveCreateInput(t *testing.T) {
 			wantPromptOverride string
 			wantMode           workitem.WorkMode
 		}{
-			{"github issue", 456, "", "issue", "github", "issue", "456", "", workitem.ModeImplement},
-			{"github pr", 456, "", "pr", "github", "pr", "456", "", workitem.ModeReview},
-			{"prompt", 0, "do something", "", "prompt", "prompt", "do something", "", workitem.ModeImplement},
-			{"github issue with prompt override", 456, "override", "issue", "github", "issue", "456", "override", workitem.ModeImplement},
+			{"github issue", 456, "", "", "issue", "github", "issue", "456", "", workitem.ModeImplement},
+			{"github pr", 456, "", "", "pr", "github", "pr", "456", "", workitem.ModeReview},
+			{"prompt", 0, "do something", "", "", "prompt", "prompt", "do something", "", workitem.ModeImplement},
+			{"github issue with prompt override", 456, "override", "", "issue", "github", "issue", "456", "override", workitem.ModeImplement},
+			{"opsx change", 0, "", "add-auth", "", "opsx", "change", "add-auth", "", workitem.ModeImplement},
+			{"opsx with prompt override", 0, "extra instructions", "add-auth", "", "opsx", "change", "add-auth", "extra instructions", workitem.ModeImplement},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				input, err := ResolveCreateInput(tt.githubNumber, tt.promptText, tt.typeFlag)
+				input, err := ResolveCreateInput(tt.githubNumber, tt.promptText, tt.opsxChange, tt.typeFlag)
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
@@ -71,19 +75,22 @@ func TestResolveCreateInput(t *testing.T) {
 			name         string
 			githubNumber int
 			promptText   string
+			opsxChange   string
 			typeFlag     string
 			wantErrSubs  []string
 		}{
-			{"no source flag", 0, "", "", []string{"must specify --github or --prompt"}},
-			{"github without -t", 456, "", "", []string{"--type (-t) is required for"}},
-			{"github with unknown -t", 456, "", "mr", []string{"unknown type", "issue", "pr"}},
-			{"prompt with -t", 0, "do something", "prompt", []string{"--type is not used with --prompt"}},
-			{"github negative number", -1, "", "issue", []string{"must be a positive number"}},
+			{"no source flag", 0, "", "", "", []string{"must specify --github, --opsx, or --prompt"}},
+			{"github without -t", 456, "", "", "", []string{"--type (-t) is required for"}},
+			{"github with unknown -t", 456, "", "", "mr", []string{"unknown type", "issue", "pr"}},
+			{"prompt with -t", 0, "do something", "", "prompt", []string{"--type is not used with --prompt"}},
+			{"opsx with -t", 0, "", "add-auth", "change", []string{"--type is not used with --opsx"}},
+			{"github negative number", -1, "", "", "issue", []string{"must be a positive number"}},
+			{"github and opsx both set", 456, "", "add-auth", "", []string{"must specify only one source"}},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				_, err := ResolveCreateInput(tt.githubNumber, tt.promptText, tt.typeFlag)
+				_, err := ResolveCreateInput(tt.githubNumber, tt.promptText, tt.opsxChange, tt.typeFlag)
 				if err == nil {
 					t.Fatal("expected error, got nil")
 				}

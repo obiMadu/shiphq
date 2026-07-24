@@ -16,6 +16,7 @@ import (
 	"github.com/obiMadu/wtmag/internal/runtime"
 	"github.com/obiMadu/wtmag/internal/session"
 	"github.com/obiMadu/wtmag/internal/source"
+	openspecSource "github.com/obiMadu/wtmag/internal/source/openspec"
 	_ "github.com/obiMadu/wtmag/internal/source/providers"
 	"github.com/obiMadu/wtmag/internal/workitem"
 	"github.com/spf13/cobra"
@@ -24,11 +25,12 @@ import (
 var (
 	githubFlag        int
 	promptFlag        string
+	opsxFlag         string
 	projectFlag       string
 	typeFlag          string
 	launchFlag        string
 	agentFlag         string
-	modelFlag         string
+	modelFlag          string
 	prFlag            bool
 	cleanupIDFlag     string
 	promoteIDFlag     string
@@ -42,7 +44,7 @@ var rootCmd = &cobra.Command{
 	Use:   "wtmag",
 	Short: "Local orchestrator for task descriptions and PR reviews",
 	Long: `wtmag creates isolated local worktrees and tmux-backed agent workers 
-from task descriptions (GitHub issues, custom prompts) and for PR reviews.`,
+from task descriptions (GitHub issues, OpenSpec changes, custom prompts) and for PR reviews.`,
 }
 
 var createCmd = &cobra.Command{
@@ -81,6 +83,7 @@ func init() {
 
 	createCmd.Flags().IntVar(&githubFlag, "github", 0, "GitHub issue/PR number")
 	createCmd.Flags().StringVar(&promptFlag, "prompt", "", "Raw prompt text")
+	createCmd.Flags().StringVar(&opsxFlag, "opsx", "", "OpenSpec change name")
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
 	createCmd.Flags().StringVar(&launchFlag, "launch", "", "Launch worker in `session` or `window` mode")
@@ -117,7 +120,12 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	createInput, err := createinput.ResolveCreateInput(githubFlag, promptFlag, typeFlag)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to determine current directory: %w", err)
+	}
+
+	createInput, err := createinput.ResolveCreateInput(githubFlag, promptFlag, opsxFlag, typeFlag)
 	if err != nil {
 		return err
 	}
@@ -164,6 +172,12 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 	workerSession, err := localRuntime.Create(project, workItem, workerPrompt, selectedAgent, selectedModel, placementKind)
 	if err != nil {
 		return err
+	}
+
+	if workItem.Source.System == "opsx" {
+		if err := openspecSource.MoveChange(cwd, workerSession.WorktreePath, workItem.Source.Reference); err != nil {
+			return fmt.Errorf("failed to move OpenSpec change to worktree: %w", err)
+		}
 	}
 
 	fmt.Printf("✓ Created worker: %s (%s)\n", workerSession.ID, workerSession.Placement)

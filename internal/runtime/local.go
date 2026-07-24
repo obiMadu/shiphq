@@ -16,9 +16,10 @@ import (
 )
 
 type Session struct {
-	ID        string
-	Status    string
-	Placement session.PlacementKind
+	ID           string
+	Status       string
+	Placement    session.PlacementKind
+	WorktreePath string
 }
 
 type LocalRuntime struct{}
@@ -126,9 +127,10 @@ func (localRuntime LocalRuntime) Create(project string, workItem workitem.WorkIt
 	}
 
 	return Session{
-		ID:        workerID,
-		Status:    "running",
-		Placement: metadata.EffectivePlacementKind(),
+		ID:           workerID,
+		Status:       "running",
+		Placement:    metadata.EffectivePlacementKind(),
+		WorktreePath: worktreePath,
 	}, nil
 }
 

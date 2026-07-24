@@ -4,7 +4,7 @@ description: |
   Orchestrate local AI workers with Git worktrees, tmux, and wtmag.
 
   Use this skill whenever the user wants to:
-  - Spawn parallel AI agents from task descriptions (GitHub issues, custom prompts) or PRs
+  - Spawn parallel AI agents from task descriptions (GitHub issues, OpenSpec changes, custom prompts) or PRs
   - Create isolated local workspaces for agent execution
   - Run an orchestrator/worker workflow inside tmux
   - Manage background agent sessions they can manually jump into later
@@ -110,6 +110,14 @@ wtmag create --github 456 -t pr
 wtmag create --prompt "Refactor authentication middleware"
 ```
 
+### OpenSpec change
+
+```bash
+wtmag create --opsx add-user-auth
+```
+
+The change directory (`openspec/changes/<name>/`) is moved from the current working directory into the new worktree. The worker prompt includes the proposal content and instructs the agent to read the full change and use the `openspec-apply-change` skill to implement it.
+
 ### Add custom instructions to a GitHub issue
 
 ```bash
@@ -144,6 +152,7 @@ wtmag cleanup --id project-github-issue-456 --force
 ## Important command rules
 
 - `--type` / `-t` is required for GitHub and must be `issue` or `pr`
+- `--opsx <change-name>` spawns a worker from an OpenSpec change; the change files are moved into the worktree
 - `--prompt` by itself means a custom prompt task
 - `--prompt` with `--github` means "keep the source context and add these instructions"
 - `--pr` injects PR creation instructions (commit, push, open PR) into the implementation prompt; it is only valid with implementation tasks, not review tasks
