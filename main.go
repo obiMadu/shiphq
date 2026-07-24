@@ -23,13 +23,13 @@ import (
 
 var (
 	githubFlag        int
-	jiraFlag          string
 	promptFlag        string
 	projectFlag       string
 	typeFlag          string
 	launchFlag        string
 	agentFlag         string
 	modelFlag         string
+	prFlag            bool
 	cleanupIDFlag     string
 	promoteIDFlag     string
 	sessionLaunchFlag bool
@@ -42,7 +42,7 @@ var rootCmd = &cobra.Command{
 	Use:   "wtmag",
 	Short: "Local orchestrator for task descriptions and PR reviews",
 	Long: `wtmag creates isolated local worktrees and tmux-backed agent workers 
-from task descriptions (GitHub issues, Jira tickets, custom prompts) and for PR reviews.`,
+from task descriptions (GitHub issues, custom prompts) and for PR reviews.`,
 }
 
 var createCmd = &cobra.Command{
@@ -80,13 +80,13 @@ func init() {
 	rootCmd.AddCommand(createCmd, listCmd, attachCmd, cleanupCmd, promoteCmd)
 
 	createCmd.Flags().IntVar(&githubFlag, "github", 0, "GitHub issue/PR number")
-	createCmd.Flags().StringVar(&jiraFlag, "jira", "", "Jira ticket ID (e.g., PROJ-123)")
 	createCmd.Flags().StringVar(&promptFlag, "prompt", "", "Raw prompt text")
 	createCmd.Flags().StringVar(&projectFlag, "project", "", "Project name (auto-detected if not set)")
 	createCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Type (required for --github: issue, pr)")
 	createCmd.Flags().StringVar(&launchFlag, "launch", "", "Launch worker in `session` or `window` mode")
 	createCmd.Flags().StringVar(&agentFlag, "agent", "", "AI agent to spawn (defaults to agents.default.name from wtmag.toml or ~/.config/wtmag/config.toml)")
 	createCmd.Flags().StringVar(&modelFlag, "model", "", "Model override in `provider/model[:thinking]` format (translated per agent CLI)")
+	createCmd.Flags().BoolVar(&prFlag, "pr", false, "Inject PR creation instructions into the implementation prompt")
 	createCmd.Flags().BoolVarP(&sessionLaunchFlag, "session", "s", false, "Launch worker in a dedicated tmux session")
 	createCmd.Flags().BoolVarP(&windowLaunchFlag, "window", "w", false, "Launch worker in the current tmux session as a window")
 	listCmd.Flags().BoolVar(&allFlag, "all", false, "List workers across all projects")
@@ -117,7 +117,7 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	createInput, err := createinput.ResolveCreateInput(githubFlag, jiraFlag, promptFlag, typeFlag)
+	createInput, err := createinput.ResolveCreateInput(githubFlag, promptFlag, typeFlag)
 	if err != nil {
 		return err
 	}
@@ -134,9 +134,12 @@ func createCmdRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	workerPrompt := promptbuilder.BuildDefault(workItem, repositoryTarget)
-	if createInput.PromptOverride != "" {
-		workerPrompt = promptbuilder.BuildOverride(workItem, repositoryTarget, createInput.PromptOverride)
+	workerPrompt, err := promptbuilder.Build(workItem, repositoryTarget, promptbuilder.BuildOptions{
+		OverrideText: createInput.PromptOverride,
+		PRFlag:       prFlag,
+	})
+	if err != nil {
+		return err
 	}
 
 	placementKind, err := resolveLaunchPlacement(workItem)

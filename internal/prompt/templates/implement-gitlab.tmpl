@@ -1,0 +1,8 @@
+{{- if .OverrideText}}{{.OverrideText}}{{if .Context}}
+
+Context:
+{{.Context}}{{end}}{{else if .SourceLabel}}Implement {{.SourceLabel}}.{{if .Context}}
+
+{{.Context}}{{end}}{{else}}{{.Context}}{{end}}{{if .PRInstruction}}
+
+{{.PRInstruction}}{{end}}

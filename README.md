@@ -112,6 +112,9 @@ wtmag create --prompt "Custom task"
 # Override default prompt with custom instructions
 wtmag create --github 456 -t issue --prompt "Focus on test coverage"
 
+# Inject PR creation instructions into the implementation prompt
+wtmag create --github 456 -t issue --pr           # Agent will commit, push, and open a PR when done
+
 # Use different AI agents (built-in: pi, opencode, claude, codex)
 wtmag create --github 456 -t issue --agent opencode
 wtmag create --github 456 -t issue --agent claude
@@ -274,6 +277,43 @@ Each agent worker runs in **tmux** (not headless) so you can:
 
 Workers can stay lightweight as a single parent-session window by default, then be promoted into a dedicated session when they need to grow.
 
+## Prompt Templates
+
+wtmag builds worker prompts from template files using Go's `text/template` syntax. Three template types cover all work modes:
+
+| Type | Used for | Description |
+|------|----------|-------------|
+| `implement` | Implementation tasks | The "Implement X" frame with work item context |
+| `review` | Review tasks (PRs) | The "Review X" frame with review-only instructions |
+| `pr` | PR creation (`--pr` flag) | "Commit, push, open a PR" instructions — only injected when `--pr` is passed |
+
+Each type has a generic default and host-specific overrides (GitHub, GitLab, Bitbucket). Host-specific PR templates name the concrete CLI tool (`gh`, `glab`, etc.). The generic `pr.tmpl` instructs the agent to detect the git remote host and use the matching CLI tool.
+
+### Template Override Directories
+
+Templates are overridable from disk. Resolution order (first match wins):
+
+1. `./wtmag-prompts/{type}-{host}.tmpl` — project, host-specific
+2. `~/.config/wtmag/prompts/{type}-{host}.tmpl` — global, host-specific
+3. `./wtmag-prompts/{type}.tmpl` — project, generic
+4. `~/.config/wtmag/prompts/{type}.tmpl` — global, generic
+5. Embedded default — shipped in the binary
+
+Project overrides global, host-specific overrides generic. To customize the PR instruction for GitHub repos, create `~/.config/wtmag/prompts/pr-github.tmpl`. To customize the implementation frame for a specific project, create `./wtmag-prompts/implement.tmpl` at the project root.
+
+### Template Data
+
+Frame templates (`implement`, `review`) receive:
+
+- `{{.SourceLabel}}` — human-readable label (e.g., "GitHub issue #456", empty for `--prompt`)
+- `{{.Context}}` — work item title and description
+- `{{.OverrideText}}` — `--prompt` override text, empty if not set
+- `{{.PRInstruction}}` — rendered PR template output, empty if `--pr` not set
+
+PR template (`pr`) receives:
+
+- `{{.Reference}}` — reference backlink note (e.g., "Refs #456" for GitHub issues on GitHub host), empty otherwise
+
 ## Architecture
 
 **Current implementation: Local only**
@@ -306,6 +346,7 @@ Workers can stay lightweight as a single parent-session window by default, then 
 - `create ... --model <provider/model[:thinking]>` - Override the spawned agent model for a single run (`pi` and `opencode` only right now)
 - `create ... --launch <session|window>` / `-s` / `-w` - Override project/global `[launch]` defaults for a single run
 - `create ... --prompt "custom"` - Override default prompt with custom instructions
+- `create ... --pr` - Inject PR creation instructions into the implementation prompt (agent commits, pushes, and opens a PR when done)
 - `list` / `list --all` - Show known workers and whether they are running or stopped
 - `attach <id>` - Attach to the worker's tmux session or parent-session window
 - `promote --id <id>` - Promote a window worker into a dedicated tmux session
@@ -314,3 +355,7 @@ Workers can stay lightweight as a single parent-session window by default, then 
 ## License
 
 MIT
+
+---
+
+Made with ❤ by [Obi Madu](https://obimadu.pro)

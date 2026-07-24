@@ -19,5 +19,8 @@ schema: spec-driven
 #     tasks:
 #       - Break tasks into chunks of max 2 hours
 rules:
+  design:
+    - Always use the 'test-driven-development' skill during designs, considering the test pyramid always and asking the user clarifying questions in case of any ambiguity. Tesing is never an afterthought.
   tasks:
-    - Always use the /test-driven-development skill during tasks planning
+    - All task groups generated must follow the test driven principles from 'test-driven-development' skill
+

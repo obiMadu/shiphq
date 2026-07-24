@@ -50,10 +50,9 @@ func Resolve(system, kind string) (Provider, workitem.WorkMode, error) {
 }
 
 func Fetch(sourceRef workitem.SourceRef) (workitem.WorkItem, error) {
-	entry, exists := providers[sourceRef.RegistryKey()]
-	if !exists {
-		return workitem.WorkItem{}, fmt.Errorf("unsupported source: %s %s", sourceRef.System, sourceRef.Kind)
+	provider, _, err := Resolve(sourceRef.System, sourceRef.Kind)
+	if err != nil {
+		return workitem.WorkItem{}, err
 	}
-
-	return entry.Fetcher.Fetch(sourceRef)
+	return provider.Fetch(sourceRef)
 }

@@ -4,7 +4,7 @@ description: |
   Orchestrate local AI workers with Git worktrees, tmux, and wtmag.
 
   Use this skill whenever the user wants to:
-  - Spawn parallel AI agents from task descriptions (GitHub issues, Jira tickets, prompts) or PRs
+  - Spawn parallel AI agents from task descriptions (GitHub issues, custom prompts) or PRs
   - Create isolated local workspaces for agent execution
   - Run an orchestrator/worker workflow inside tmux
   - Manage background agent sessions they can manually jump into later
@@ -17,15 +17,7 @@ description: |
 
 ## What wtmag is for
 
-wtmag is a local workflow for turning task descriptions into PRs and for reviewing PRs.
-
-The main value is not just "spawn an agent." The value is:
-
-1. take a task description or PR review target
-2. create an isolated worktree and a tmux worker (dedicated session or parent-session window)
-3. run a worker agent inside that real local workspace
-4. let the human attach whenever they want
-5. drive the work all the way to a PR
+wtmag is a local workflow for turning task descriptions into PRs and for reviewing PRs. It creates an isolated worktree and a tmux worker (dedicated session or parent-session window), runs a worker agent inside that real local workspace, and lets the human attach whenever they want.
 
 This is why tmux matters: the worker is running in a normal tmux environment the human can inspect, override, and extend when needed.
 
@@ -68,33 +60,19 @@ Model override format:
 - `pi` receives `--model provider/model[:thinking]`
 - `opencode` receives `--model provider/model` and maps `:thinking` to `--variant`
 - if the selected agent does not support wtmag model overrides, say so instead of guessing provider-specific flags
-
-Local CLI verification for model overrides:
-
-- before using `--model`, inspect the locally installed agent CLI help so you are not relying only on this static skill text
-- use the local CLI help output as the source of truth if it differs from the notes above
+- before using `--model`, inspect the locally installed agent CLI help (`pi --help`, `opencode --help`, `opencode run --help`, `opencode models --help`) and use that output as the source of truth; add future agents to this list as wtmag model override support expands
 - after verification, still call `wtmag create ... --model provider/model[:thinking]`; do not bypass wtmag by passing provider-specific model flags directly
-- current verification commands:
-  - `pi --help`
-  - `opencode --help`
-  - `opencode run --help`
-  - `opencode models --help`
-- add future agents to this list as wtmag model override support expands
-
-Examples:
-
-- default: `wtmag create --github 456 -t issue`
-- user explicitly asks for OpenCode: `wtmag create --github 456 -t issue --agent opencode`
-- user explicitly asks for Claude: `wtmag create --github 456 -t issue --agent claude`
-- user explicitly asks for Codex: `wtmag create --github 456 -t issue --agent codex`
-- user explicitly asks for GPT 5.2 high thinking on OpenCode: `wtmag create --github 456 -t issue --agent opencode --model openai/gpt-5.2:high`
-- user explicitly asks for Claude Sonnet high thinking on Pi: `wtmag create --github 456 -t issue --agent pi --model anthropic/claude-sonnet-4.5:high`
 
 ## What the worker is supposed to do
 
-`Task descriptions` is the umbrella product term only. Do not flatten source-native terminology in commands or prompts: GitHub issues are still GitHub issues, Jira tickets are still Jira tickets, and PR review targets are still PRs.
+`Task descriptions` is the umbrella product term only. Do not flatten source-native terminology in commands or prompts: GitHub issues are still GitHub issues, and PR review targets are still PRs.
 
-For **task descriptions** such as GitHub issues, wtmag's default prompt is end-to-end delivery oriented:
+For **task descriptions** such as GitHub issues, wtmag's default prompt is implementation-oriented:
+
+- implement the task
+- report back
+
+The PR creation instruction (commit, push, open a PR) is **not injected by default**. Pass `--pr` to inject it:
 
 - implement the task
 - commit the changes
@@ -110,31 +88,7 @@ For **GitHub PRs**, the default worker behavior is review-only:
 - do not implement fixes
 - do not commit, push, approve, merge, or otherwise modify the PR
 
-Placement defaults:
-
-- generated config defaults both implementation work and review work to a parent-session tmux `window`
-- use `-s` / `--launch session` only when the user explicitly wants a dedicated session
-- use `-w` / `--launch window` only when the user explicitly wants a parent-session window or when they are relying on the configured default
-
-For **task descriptions** from Jira tickets, the intended default is the same end-to-end implementation-to-PR workflow, but the current Jira adapter is still not implemented.
-
-If the user passes `--prompt` along with `--github` or `--jira`, wtmag keeps the source context and adds the user's instructions.
-
-## Current product shape
-
-What works today:
-
-- GitHub task descriptions (issues)
-- GitHub PRs
-- custom prompts
-- local runtime
-
-What is not complete yet:
-
-- Jira adapter
-- remote/cloud runtimes
-
-Do not describe Jira as fully working today. If the user asks for it, say the command shape exists but the adapter still needs implementation.
+If the user passes `--prompt` along with `--github`, wtmag keeps the source context and adds the user's instructions. **Do not use `--prompt` with `--github` unless the user explicitly asks for custom instructions.** The built-in prompts for issues already contain the work item context. Adding a custom prompt usually strips out the source context because agents rarely include it in their override text. Only add `--prompt` when the user specifically requests extra instructions like "Start by writing tests" or "Use this specific approach."
 
 ## Commands
 
@@ -162,16 +116,18 @@ wtmag create --prompt "Refactor authentication middleware"
 wtmag create --github 456 -t issue --prompt "Start by writing tests"
 ```
 
+### Inject PR creation instructions
+
+```bash
+wtmag create --github 456 -t issue --pr
+```
+
 ### Use a different agent only when requested
 
 ```bash
 wtmag create --github 456 -t issue --agent claude
-```
-
-### Use a specific model only when requested
-
-```bash
 wtmag create --github 456 -t issue --agent opencode --model openai/gpt-5.2:high
+wtmag create --github 456 -t issue --agent pi --model anthropic/claude-sonnet-4.5:high
 ```
 
 ### Worker management
@@ -188,19 +144,34 @@ wtmag cleanup --id project-github-issue-456 --force
 ## Important command rules
 
 - `--type` / `-t` is required for GitHub and must be `issue` or `pr`
-- Jira does not use `-t`
 - `--prompt` by itself means a custom prompt task
-- `--prompt` with `--github` or `--jira` means "keep the source context and add these instructions"
+- `--prompt` with `--github` means "keep the source context and add these instructions"
+- `--pr` injects PR creation instructions (commit, push, open PR) into the implementation prompt; it is only valid with implementation tasks, not review tasks
 - `--model` uses `provider/model[:thinking]` format and is intended for explicit per-run model overrides
 - wtmag currently supports `--model` overrides for `pi` and `opencode`
-- generated config defaults both `review` and `implement` work to `window` placement
 - `-s` / `--launch session` forces a dedicated tmux session
-- `-w` / `--launch window` forces a worker window in the current tmux session
-- `-w` / `--launch window` requires running inside tmux
+- `-w` / `--launch window` forces a worker window in the current tmux session (requires running inside tmux)
 - `list` shows known workers for the current detected project; use `list --all` to see WTmag workers across projects
 - `promote --id ...` upgrades a window worker into a dedicated tmux session
 - `cleanup --force` uses `wt remove --force` for the worktree
-- **Do not use `--prompt` with `--github` or `--jira` unless the user explicitly asks for custom instructions.** The built-in prompts for issues and PRs already contain the complete PR workflow (implement, commit, push, open PR, report URL). Adding a custom prompt usually strips out these steps because agents rarely include the full delivery workflow in their override text. Only add `--prompt` when the user specifically requests extra instructions like "Start by writing tests" or "Use this specific approach."
+
+## Prompt templates
+
+wtmag builds worker prompts from template files using Go's `text/template` syntax. Three template types exist:
+
+- `implement` — the implementation frame ("Implement X.\n\n{context}")
+- `review` — the review frame ("Review X.\n\n{context}\n\n{review instructions}")
+- `pr` — the PR creation instruction ("commit, push, open a PR..."), only injected when `--pr` is passed
+
+Each type has a generic default and host-specific overrides (GitHub, GitLab, Bitbucket). Templates are overridable from disk:
+
+1. `./wtmag-prompts/{type}-{host}.tmpl` — project, host-specific
+2. `~/.config/wtmag/prompts/{type}-{host}.tmpl` — global, host-specific
+3. `./wtmag-prompts/{type}.tmpl` — project, generic
+4. `~/.config/wtmag/prompts/{type}.tmpl` — global, generic
+5. Embedded default — shipped in the binary
+
+Project overrides global, host-specific overrides generic. See the README "Prompt Templates" section for template data fields.
 
 ## Human vs orchestrator responsibilities
 
@@ -213,13 +184,3 @@ After `wtmag create`:
 Good follow-up response:
 
 > Created worker `project-github-issue-456`. The worker is running in the background. You can jump in with tmux-sessionx or run `wtmag attach project-github-issue-456`.
-
-## Why users may choose wtmag over other agent tools
-
-When relevant, emphasize these points:
-
-- it is local and inspectable
-- tmux workers are first-class, not an afterthought
-- worktrees are easy to create and clean up
-- humans can jump in at any point
-- WorkTrunk hooks can reuse ignored files and caches to reduce cold starts

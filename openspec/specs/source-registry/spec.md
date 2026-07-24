@@ -27,8 +27,8 @@ The registry SHALL expose `KindsFor(system string) []entry` returning every regi
 - **THEN** it returns two entries: `{Kind:"issue", Mode:Implement}` and `{Kind:"pr", Mode:Review}`
 
 #### Scenario: Single-kind source lookup
-- **WHEN** `KindsFor("jira")` is called after `jira:ticket` (Implement) is registered
-- **THEN** it returns one entry: `{Kind:"ticket", Mode:Implement}`
+- **WHEN** `KindsFor("prompt")` is called after `prompt:prompt` (Implement) is registered
+- **THEN** it returns one entry: `{Kind:"prompt", Mode:Implement}`
 
 #### Scenario: Unknown system lookup
 - **WHEN** `KindsFor("nonexistent")` is called

@@ -1,0 +1,8 @@
+{{- if .OverrideText}}{{.OverrideText}}{{if .Context}}
+
+Context:
+{{.Context}}{{end}}{{else if .SourceLabel}}Review {{.SourceLabel}}.{{if .Context}}
+
+{{.Context}}{{end}}{{else}}{{.Context}}{{end}}
+
+This is a review-only task. Inspect the PR and report your findings back here. Do not edit any files, implement fixes, commit, push, approve, merge, or otherwise modify the PR or branch. If you identify a fix, describe it without making changes.

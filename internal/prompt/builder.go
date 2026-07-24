@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -8,83 +9,84 @@ import (
 	"github.com/obiMadu/wtmag/internal/workitem"
 )
 
-func BuildDefault(workItem workitem.WorkItem, repositoryTarget repository.Target) string {
-	workItemContext := workItem.Context()
-
-	switch workItem.Mode {
-	case workitem.ModeReview:
-		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
-			return appendReviewInstructions(strings.TrimSpace(workItem.Description))
-		}
-		if workItemContext == "" {
-			return fmt.Sprintf("Review %s.\n\n%s", describeWorkItem(workItem), reviewInstruction())
-		}
-		return fmt.Sprintf("Review %s.\n\n%s\n\n%s", describeWorkItem(workItem), workItemContext, reviewInstruction())
-	case workitem.ModeImplement:
-		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
-			return appendImplementationInstructions(strings.TrimSpace(workItem.Description), workItem, repositoryTarget)
-		}
-		if workItemContext == "" {
-			return fmt.Sprintf("Implement %s.\n\n%s", describeWorkItem(workItem), deliveryInstruction(workItem, repositoryTarget))
-		}
-		return fmt.Sprintf("Implement %s.\n\n%s\n\n%s", describeWorkItem(workItem), workItemContext, deliveryInstruction(workItem, repositoryTarget))
-	default:
-		return workItemContext
-	}
+type BuildOptions struct {
+	OverrideText string
+	PRFlag       bool
 }
 
-func BuildOverride(workItem workitem.WorkItem, repositoryTarget repository.Target, instructions string) string {
-	trimmedInstructions := strings.TrimSpace(instructions)
-	if trimmedInstructions == "" {
-		return BuildDefault(workItem, repositoryTarget)
+type FrameData struct {
+	SourceLabel   string
+	Context       string
+	OverrideText  string
+	PRInstruction string
+}
+
+type PRData struct {
+	Reference string
+}
+
+func Build(workItem workitem.WorkItem, repoTarget repository.Target, opts BuildOptions) (string, error) {
+	if opts.PRFlag && workItem.Mode == workitem.ModeReview {
+		return "", fmt.Errorf("--pr is only valid with implementation tasks; review tasks already inspect a PR")
 	}
 
-	if workItem.Mode == workitem.ModeImplement {
-		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
-			return appendImplementationInstructions(trimmedInstructions, workItem, repositoryTarget)
+	sourceLabel := describeWorkItem(workItem)
+	context := workItem.Context()
+	overrideText := strings.TrimSpace(opts.OverrideText)
+	host := string(repoTarget.Host)
+
+	var prInstruction string
+	if opts.PRFlag && workItem.Mode == workitem.ModeImplement {
+		reference := resolveReference(workItem, repoTarget)
+		prTemplate, err := resolveTemplate("pr", host)
+		if err != nil {
+			return "", err
 		}
-
-		workItemContext := workItem.Context()
-		if workItemContext == "" {
-			return appendImplementationInstructions(trimmedInstructions, workItem, repositoryTarget)
+		var buf bytes.Buffer
+		if err := prTemplate.Execute(&buf, PRData{Reference: reference}); err != nil {
+			return "", fmt.Errorf("failed to render pr template: %w", err)
 		}
-
-		return appendImplementationInstructions(fmt.Sprintf("%s\n\nContext:\n%s", trimmedInstructions, workItemContext), workItem, repositoryTarget)
+		prInstruction = strings.TrimSpace(buf.String())
 	}
 
-	if workItem.Mode == workitem.ModeReview {
-		if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
-			return appendReviewInstructions(trimmedInstructions)
-		}
-
-		workItemContext := workItem.Context()
-		if workItemContext == "" {
-			return appendReviewInstructions(trimmedInstructions)
-		}
-
-		return appendReviewInstructions(fmt.Sprintf("%s\n\nContext:\n%s", trimmedInstructions, workItemContext))
+	var templateType string
+	switch workItem.Mode {
+	case workitem.ModeImplement:
+		templateType = "implement"
+	case workitem.ModeReview:
+		templateType = "review"
+	default:
+		return context, nil
 	}
 
-	if workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt" {
-		return trimmedInstructions
+	frameTemplate, err := resolveTemplate(templateType, host)
+	if err != nil {
+		return "", err
 	}
 
-	workItemContext := workItem.Context()
-	if workItemContext == "" {
-		return trimmedInstructions
+	data := FrameData{
+		SourceLabel:   sourceLabel,
+		Context:       context,
+		OverrideText:  overrideText,
+		PRInstruction: prInstruction,
 	}
 
-	return fmt.Sprintf("%s\n\nContext:\n%s", trimmedInstructions, workItemContext)
+	var buf bytes.Buffer
+	if err := frameTemplate.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to render %s template: %w", templateType, err)
+	}
+
+	return strings.TrimSpace(buf.String()), nil
 }
 
 func describeWorkItem(workItem workitem.WorkItem) string {
 	switch {
+	case workItem.Source.System == "prompt" && workItem.Source.Kind == "prompt":
+		return ""
 	case workItem.Source.System == "github" && workItem.Source.Kind == "issue":
 		return fmt.Sprintf("GitHub issue #%s", workItem.Source.Reference)
 	case workItem.Source.System == "github" && workItem.Source.Kind == "pr":
 		return fmt.Sprintf("GitHub PR #%s", workItem.Source.Reference)
-	case workItem.Source.System == "jira" && workItem.Source.Kind == "ticket":
-		return fmt.Sprintf("Jira ticket %s", workItem.Source.Reference)
 	default:
 		genericLabel := strings.TrimSpace(workItem.Source.System + " " + workItem.Source.Kind)
 		if workItem.Source.Reference == "" {
@@ -94,53 +96,15 @@ func describeWorkItem(workItem workitem.WorkItem) string {
 	}
 }
 
-func appendImplementationInstructions(promptText string, workItem workitem.WorkItem, repositoryTarget repository.Target) string {
-	trimmedPromptText := strings.TrimSpace(promptText)
-	if trimmedPromptText == "" {
-		return deliveryInstruction(workItem, repositoryTarget)
-	}
-
-	return fmt.Sprintf("%s\n\n%s", trimmedPromptText, deliveryInstruction(workItem, repositoryTarget))
-}
-
-func appendReviewInstructions(promptText string) string {
-	trimmedPromptText := strings.TrimSpace(promptText)
-	if trimmedPromptText == "" {
-		return reviewInstruction()
-	}
-
-	return fmt.Sprintf("%s\n\n%s", trimmedPromptText, reviewInstruction())
-}
-
-func deliveryInstruction(workItem workitem.WorkItem, repositoryTarget repository.Target) string {
-	requestReferenceInstruction := referenceInstruction(workItem, repositoryTarget)
-
-	switch repositoryTarget.Host {
-	case repository.HostGitHub:
-		return fmt.Sprintf("When the implementation is complete, commit your changes, push the branch, open and submit a GitHub PR with gh against the appropriate base branch%s, report the PR URL, and stop there. Do not merge, approve, or enable auto-merge on the PR; it will be reviewed separately.", requestReferenceInstruction)
-	case repository.HostGitLab:
-		return fmt.Sprintf("When the implementation is complete, commit your changes, push the branch, open and submit a GitLab merge request with glab against the appropriate base branch%s, report the merge request URL, and stop there. Do not merge, approve, or enable auto-merge on it; it will be reviewed separately.", requestReferenceInstruction)
-	case repository.HostBitbucket:
-		return fmt.Sprintf("When the implementation is complete, commit your changes, push the branch, open and submit a Bitbucket pull request against the appropriate base branch%s, report the pull request URL, and stop there. Do not merge, approve, or enable auto-merge on it; it will be reviewed separately.", requestReferenceInstruction)
-	default:
-		return fmt.Sprintf("When the implementation is complete, commit your changes, push the branch, open and submit a pull request against the appropriate base branch%s, report the PR URL, and stop there. Do not merge, approve, or enable auto-merge on it; it will be reviewed separately.", requestReferenceInstruction)
-	}
-}
-
-func referenceInstruction(workItem workitem.WorkItem, repositoryTarget repository.Target) string {
+func resolveReference(workItem workitem.WorkItem, repoTarget repository.Target) string {
 	sourceReference := strings.TrimSpace(workItem.Source.Reference)
 	if sourceReference == "" {
 		return ""
 	}
 
-	switch {
-	case workItem.Source.System == "github" && workItem.Source.Kind == "issue" && repositoryTarget.Host == repository.HostGitHub:
+	if workItem.Source.System == "github" && workItem.Source.Kind == "issue" && repoTarget.Host == repository.HostGitHub {
 		return fmt.Sprintf(", make sure the PR body references GitHub issue #%s with a non-closing reference like `Refs #%s` so the issue gets a backlink without being closed", sourceReference, sourceReference)
-	default:
-		return ""
 	}
-}
 
-func reviewInstruction() string {
-	return "This is a review-only task. Inspect the PR and report your findings back here. Do not edit any files, implement fixes, commit, push, approve, merge, or otherwise modify the PR or branch. If you identify a fix, describe it without making changes."
+	return ""
 }

@@ -44,3 +44,14 @@ prompt_flag = ""
 # [agents.custom-agent-with-args]
 # command = "my-agent"
 # args = ["run", "--profile", "coding"]
+
+# Prompt template overrides.
+# wtmag builds worker prompts from template files (implement, review, pr).
+# Each type has a generic default and host-specific overrides (github, gitlab, bitbucket).
+# Override any template by creating a file in:
+#   ~/.config/wtmag/prompts/{type}-{host}.tmpl  (global, host-specific)
+#   ~/.config/wtmag/prompts/{type}.tmpl         (global, generic)
+#   ./wtmag-prompts/{type}-{host}.tmpl           (project, host-specific)
+#   ./wtmag-prompts/{type}.tmpl                  (project, generic)
+# Resolution: project host-specific > global host-specific > project generic > global generic > embedded default.
+# See the "Prompt Templates" section in the README for template data fields.

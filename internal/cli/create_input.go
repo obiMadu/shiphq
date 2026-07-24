@@ -15,8 +15,7 @@ type CreateInput struct {
 	Mode           workitem.WorkMode
 }
 
-func ResolveCreateInput(githubNumber int, jiraTicketID, promptText, typeFlag string) (CreateInput, error) {
-	trimmedJiraTicketID := strings.TrimSpace(jiraTicketID)
+func ResolveCreateInput(githubNumber int, promptText, typeFlag string) (CreateInput, error) {
 	trimmedPromptText := strings.TrimSpace(promptText)
 	trimmedType := strings.TrimSpace(typeFlag)
 
@@ -32,18 +31,15 @@ func ResolveCreateInput(githubNumber int, jiraTicketID, promptText, typeFlag str
 		}
 		selected = append(selected, sourceSelection{"github", strconv.Itoa(githubNumber)})
 	}
-	if trimmedJiraTicketID != "" {
-		selected = append(selected, sourceSelection{"jira", trimmedJiraTicketID})
-	}
 	if trimmedPromptText != "" && len(selected) == 0 {
 		selected = append(selected, sourceSelection{"prompt", trimmedPromptText})
 	}
 
 	if len(selected) == 0 {
-		return CreateInput{}, fmt.Errorf("must specify --github, --jira, or --prompt")
+		return CreateInput{}, fmt.Errorf("must specify --github or --prompt")
 	}
 	if len(selected) > 1 {
-		return CreateInput{}, fmt.Errorf("must specify only one source: --github, --jira, or --prompt")
+		return CreateInput{}, fmt.Errorf("must specify only one source: --github or --prompt")
 	}
 
 	choice := selected[0]

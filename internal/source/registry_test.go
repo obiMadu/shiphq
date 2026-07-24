@@ -15,7 +15,6 @@ func (fakeProvider) Fetch(sourceRef workitem.SourceRef) (workitem.WorkItem, erro
 func TestMain(m *testing.M) {
 	Register("github", "issue", workitem.ModeImplement, fakeProvider{})
 	Register("github", "pr", workitem.ModeReview, fakeProvider{})
-	Register("jira", "ticket", workitem.ModeImplement, fakeProvider{})
 	Register("prompt", "prompt", workitem.ModeImplement, fakeProvider{})
 	m.Run()
 }

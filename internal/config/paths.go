@@ -30,11 +30,6 @@ func GetGlobalConfigPath() string {
 	return filepath.Join(GetConfigDir(), "config.toml")
 }
 
-// GetConfigPath returns the full path to the global home config file.
-func GetConfigPath() string {
-	return GetGlobalConfigPath()
-}
-
 // GetProjectConfigPath returns the project config path for the current working directory.
 func GetProjectConfigPath() (string, error) {
 	projectRoot, err := detectProjectRoot()
@@ -87,7 +82,7 @@ func EnsureConfigDir() error {
 
 // EnsureConfigFile creates the config file with the provided contents if it does not exist yet.
 func EnsureConfigFile(contents []byte) error {
-	configPath := GetConfigPath()
+	configPath := GetGlobalConfigPath()
 
 	if _, err := os.Stat(configPath); err == nil {
 		return nil
